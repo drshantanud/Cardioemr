@@ -1,0 +1,1431 @@
+openapi: 3.1.0
+info:
+  title: CardioEMR Registry API
+  version: 0.1.0
+  summary: Registry side of CardioEMR (HF, lipid, CAD registries) on top of migrations 0001-0003.
+  description: |
+    Every request runs in one database transaction as login role `cardioemr_api`, which then does
+    `SET LOCAL ROLE r_<X-Acting-Role>` and sets `app.user_id`, `app.centre_id` and, when given,
+    `app.change_reason`. Row-level security limits every patient row to the acting centre.
+    `x-roles` on each operation lists the acting roles allowed; the API checks it before any query.
+    Database grants and triggers are the outer limit (for example lock and unlock roles are enforced
+    by registry.assessment_lock_guard from migration 0003).
+    Database errors carry a stable tag in HINT ('cemr:<CODE>') or a stable constraint name; the API
+    translates both through ref.api_error_map.
+    Errors are RFC 9457 problem documents; see components/schemas/Problem.
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: cardioemr.example.org
+security:
+  - oidc: []
+tags:
+  - name: Protocols
+  - name: Suggestions
+  - name: Enrolment
+  - name: Assessments
+  - name: Heart failure
+  - name: Lipid
+  - name: CAD
+  - name: Events
+  - name: Reports
+  - name: Exports
+
+paths:
+  /registries:
+    get:
+      tags: [Protocols]
+      operationId: listRegistries
+      summary: Registry types and the protocol versions active at the acting centre
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse, platform_admin]
+      parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+      responses:
+        '200':
+          description: Registries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Registry'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /protocols/{protocolId}:
+    parameters: [{$ref: '#/components/parameters/ProtocolId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Protocols]
+      operationId: getProtocol
+      summary: Protocol with visit schedule, endpoints and guideline rule sets
+      x-roles: [clinician, research_coordinator, principal_investigator, platform_admin]
+      responses:
+        '200':
+          description: Protocol
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Protocol'}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /protocols/{protocolId}/data-dictionary:
+    parameters: [{$ref: '#/components/parameters/ProtocolId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Protocols]
+      operationId: getDataDictionary
+      summary: Variables the protocol collects, per visit, as JSON or CSV
+      x-roles: [clinician, research_coordinator, principal_investigator, platform_admin]
+      parameters:
+        - name: visit_code
+          in: query
+          schema: {$ref: '#/components/schemas/VisitCode'}
+      responses:
+        '200':
+          description: Dictionary rows, one per variable and visit
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protocol_code, protocol_version, items]
+                properties:
+                  protocol_code: {type: string}
+                  protocol_version: {type: integer}
+                  items: {type: array, items: {$ref: '#/components/schemas/DictionaryVariable'}}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /registry-suggestions:
+    get:
+      tags: [Suggestions]
+      operationId: listSuggestions
+      summary: Open registry suggestions at the acting centre
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      parameters:
+        - {$ref: '#/components/parameters/CentreId'}
+        - {$ref: '#/components/parameters/ActingRole'}
+        - {name: status, in: query, schema: {type: string, enum: [open, screening_started, dismissed, not_eligible], default: open}}
+        - {name: registry_code, in: query, schema: {$ref: '#/components/schemas/RegistryCode'}}
+        - {name: patient_id, in: query, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/Page'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Suggestion'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /registry-suggestions/{suggestionId}:
+    parameters:
+      - {name: suggestionId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    patch:
+      tags: [Suggestions]
+      operationId: actionSuggestion
+      summary: Dismiss a suggestion, or mark it not eligible. Starting screening is POST /enrolments.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string, enum: [dismissed, not_eligible]}
+                dismiss_reason: {type: string, minLength: 3}
+      responses:
+        '200':
+          description: Updated
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Suggestion'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments:
+    post:
+      tags: [Enrolment]
+      operationId: startScreening
+      summary: Start screening a patient for a protocol (enrolment_status = screening)
+      description: If suggestion_id is given, that suggestion moves to screening_started in the same transaction.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [patient_id, protocol_id]
+              properties:
+                patient_id: {type: string, format: uuid}
+                protocol_id: {type: string, format: uuid}
+                suggestion_id: {type: string, format: uuid}
+                screening_date: {type: string, format: date}
+      responses:
+        '201':
+          description: Screening record created
+          headers: {ETag: {$ref: '#/components/headers/ETag'}, Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Enrolment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      tags: [Enrolment]
+      operationId: listEnrolments
+      summary: Enrolments at the acting centre
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters:
+        - {$ref: '#/components/parameters/CentreId'}
+        - {$ref: '#/components/parameters/ActingRole'}
+        - {name: protocol_id, in: query, schema: {type: string, format: uuid}}
+        - {name: patient_id, in: query, schema: {type: string, format: uuid}}
+        - {name: enrolment_status, in: query, schema: {$ref: '#/components/schemas/EnrolmentStatus'}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Enrolments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/Page'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Enrolment'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Enrolment]
+      operationId: getEnrolment
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Enrolment with registry-specific details
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Enrolment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}/eligibility:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    put:
+      tags: [Enrolment]
+      operationId: recordEligibility
+      summary: Record the inclusion and exclusion checklist and its result
+      x-roles: [clinician, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eligibility_status, checklist]
+              properties:
+                eligibility_status: {type: string, enum: [eligible, ineligible]}
+                checklist:
+                  type: array
+                  items:
+                    type: object
+                    required: [criterion_code, answer]
+                    properties:
+                      criterion_code: {type: string}
+                      answer: {type: string, enum: ['yes', 'no', unknown]}
+      responses:
+        '200':
+          description: Eligibility recorded; ineligible moves the enrolment to screen_failed
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Enrolment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}/enrol:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Enrolment]
+      operationId: enrol
+      summary: Enrol an eligible patient; needs an active research consent for this protocol
+      description: |
+        Sets enrolment_status = enrolled, enrolment_date, index_date, consent_id and enrolled_by, writes the
+        registry-specific enrolment details in the same transaction, and assigns the study subject code.
+        registry.enrolment_guard refuses it without an active research_registry consent for the protocol, or
+        when the protocol is not active at this site (422 CONSENT_REQUIRED / SITE_NOT_ACTIVE).
+      x-roles: [clinician, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index_date, consent_id, details]
+              properties:
+                enrolment_date: {type: string, format: date}
+                index_date: {type: string, format: date}
+                consent_id: {type: string, format: uuid}
+                details:
+                  description: Registry-specific enrolment details; the shape follows the protocol's registry.
+                  oneOf:
+                    - {$ref: '#/components/schemas/HfEnrolmentDetails'}
+                    - {$ref: '#/components/schemas/LipidEnrolmentDetails'}
+                    - {$ref: '#/components/schemas/CadEnrolmentDetails'}
+      responses:
+        '200':
+          description: Enrolled; response includes the generated visit schedule
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Enrolment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}/status:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Enrolment]
+      operationId: changeEnrolmentStatus
+      summary: Withdraw, mark lost to follow-up, deceased or completed
+      description: Consent withdrawal is recorded on the consent itself (clinical API); the database cascade then withdraws the enrolment.
+      x-roles: [clinician, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReason'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enrolment_status, status_changed_on]
+              properties:
+                enrolment_status: {type: string, enum: [withdrawn, lost_to_follow_up, deceased, completed]}
+                status_changed_on: {type: string, format: date}
+                withdrawal_reason: {type: string}
+      responses:
+        '200':
+          description: Status changed
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Enrolment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}/schedule:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Enrolment]
+      operationId: getSchedule
+      summary: Visits with target date, window and status, computed from the index date
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      parameters:
+        - {name: through, in: query, description: Expand repeating visits up to this date (default index + 5 years), schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ScheduledVisit'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /enrolments/{enrolmentId}/assessments:
+    parameters: [{$ref: '#/components/parameters/EnrolmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Assessments]
+      operationId: createAssessment
+      summary: Open an assessment for a visit
+      description: days_from_index and within_window are set by the database. An out-of-window visit is accepted and flagged, not refused.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visit_code, assessment_type, assessment_date]
+              properties:
+                visit_code: {$ref: '#/components/schemas/VisitCode'}
+                assessment_type: {type: string, enum: [baseline, scheduled, unscheduled, event_triggered, end_of_study]}
+                contact_mode: {type: string, enum: [in_person, telephone, video, records_review, proxy], default: in_person}
+                assessment_date: {type: string, format: date}
+                encounter_id: {type: string, format: uuid}
+                prefill: {type: boolean, default: true, description: Run prefill in the same request}
+      responses:
+        '201':
+          description: Assessment opened
+          headers: {ETag: {$ref: '#/components/headers/ETag'}, Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Assessment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      tags: [Assessments]
+      operationId: listAssessments
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Assessments of this enrolment, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Assessment'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Assessments]
+      operationId: getAssessment
+      summary: Assessment with every protocol variable for its visit, filled or not
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Assessment
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/AssessmentDetail'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/prefill:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Assessments]
+      operationId: prefillAssessment
+      summary: Fill emr_derived and calculated variables from the chart
+      description: |
+        Never overwrites an entered value. Each prefilled value records source_kind, source_table and
+        source_row_id and stays unverified until a person confirms it. Values extracted by AI arrive as
+        ai_extracted and always need a person to verify them.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Prefill result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filled, skipped]
+                properties:
+                  filled: {type: array, items: {$ref: '#/components/schemas/VariableValue'}}
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        variable_code: {type: string}
+                        reason: {type: string, enum: [already_entered, no_source_in_window, locked]}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/values:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    put:
+      tags: [Assessments]
+      operationId: saveValues
+      summary: Save one or more variable values (upsert per variable)
+      description: |
+        All values are saved in one transaction: one invalid value rejects the call and the response lists
+        every failing variable. Each value carries its own row_version when it already exists; a stale one
+        fails with 412 for that variable only. Changing a value that was saved before needs X-Change-Reason.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/ChangeReason'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [values]
+              properties:
+                values: {type: array, minItems: 1, maxItems: 200, items: {$ref: '#/components/schemas/VariableValueInput'}}
+      responses:
+        '200':
+          description: Saved values
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/VariableValue'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/values/{variableCode}/verification:
+    parameters:
+      - {$ref: '#/components/parameters/AssessmentId'}
+      - {name: variableCode, in: path, required: true, schema: {type: string, pattern: '^[a-z][a-z0-9_]{1,62}$'}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    put:
+      tags: [Assessments]
+      operationId: verifyValue
+      summary: Mark a value verified against source, or raise a query on it
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verification_status]
+              properties:
+                verification_status: {type: string, enum: [verified, queried]}
+                query_text: {type: string}
+      responses:
+        '200':
+          description: Updated value
+          content: {application/json: {schema: {$ref: '#/components/schemas/VariableValue'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/complete:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Assessments]
+      operationId: completeAssessment
+      summary: Mark complete, or missed with a reason
+      description: complete is refused with 422 MANDATORY_MISSING, listing each mandatory variable with no value or value_status.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [completion_status]
+              properties:
+                completion_status: {type: string, enum: [complete, missed, not_applicable]}
+                missed_reason: {type: string}
+      responses:
+        '200':
+          description: Assessment updated
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Assessment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/lock:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Assessments]
+      operationId: lockAssessment
+      summary: Lock a complete assessment after monitoring; values become read-only
+      description: Refused with 422 ASSESSMENT_INCOMPLETE while partial, and 422 OPEN_QUERIES while any value is queried.
+      x-roles: [research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      responses:
+        '200':
+          description: Locked
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Assessment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      tags: [Assessments]
+      operationId: unlockAssessment
+      summary: Unlock for correction (PI only, reason required)
+      x-roles: [principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      responses:
+        '200':
+          description: Unlocked
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Assessment'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/hf/gdmt:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Heart failure]
+      operationId: getGdmt
+      summary: GDMT status per pillar on the assessment date, from registry.compute_gdmt
+      description: Calculated live unless the assessment is locked, when the stored hf_gdmt_status rows are returned.
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: GDMT status
+          content: {application/json: {schema: {$ref: '#/components/schemas/GdmtStatus'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Heart failure]
+      operationId: saveGdmtReasons
+      summary: Store the GDMT snapshot and the reasons a pillar is not at target
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasons]
+              properties:
+                reasons:
+                  type: array
+                  items:
+                    type: object
+                    required: [pillar, reason_code]
+                    properties:
+                      pillar: {$ref: '#/components/schemas/GdmtPillar'}
+                      reason_code: {type: string, enum: [contraindication, intolerance, hypotension, hyperkalaemia, renal_dysfunction, bradycardia, worsening_hf, patient_refusal, financial, drug_unavailable, titration_in_progress, recently_initiated, not_indicated_for_phenotype, other]}
+                      detail: {type: string, description: Required when reason_code is other}
+      responses:
+        '200':
+          description: Stored snapshot
+          content: {application/json: {schema: {$ref: '#/components/schemas/GdmtStatus'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /assessments/{assessmentId}/lipid/targets:
+    parameters: [{$ref: '#/components/parameters/AssessmentId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Lipid]
+      operationId: getLipidTargets
+      summary: LDL-C target attainment under the primary (ESC/EAS 2019) and secondary (LAI 2020) guidelines
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: One row per guideline
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/LipidTargetAttainment'}}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Lipid]
+      operationId: saveLipidRiskCategories
+      summary: Set the risk category under each guideline; targets and attainment are filled by the database
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categories]
+              properties:
+                categories:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [rule_set_code, risk_category]
+                    properties:
+                      rule_set_code: {type: string, examples: [ESC_EAS_2019, LAI_2020]}
+                      risk_category: {type: string, examples: [very_high, extreme_a]}
+      responses:
+        '200':
+          description: Attainment rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/LipidTargetAttainment'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/pci-procedures:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [CAD]
+      operationId: createPciProcedure
+      summary: Record a PCI with its lesions and stents in one request
+      x-roles: [clinician]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PciProcedure'}
+      responses:
+        '201':
+          description: Procedure stored
+          headers: {ETag: {$ref: '#/components/headers/ETag'}, Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/PciProcedure'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      tags: [CAD]
+      operationId: listPciProcedures
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      responses:
+        '200':
+          description: Procedures, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/PciProcedure'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /pci-procedures/{procedureId}:
+    parameters:
+      - {name: procedureId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    get:
+      tags: [CAD]
+      operationId: getPciProcedure
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      responses:
+        '200':
+          description: Procedure with lesions and stents
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/PciProcedure'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [CAD]
+      operationId: replacePciProcedure
+      summary: Replace the procedure and its lesions and stents (status final needs a change reason)
+      x-roles: [clinician]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReason'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PciProcedure'}
+      responses:
+        '200':
+          description: Replaced
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/PciProcedure'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /events:
+    post:
+      tags: [Events]
+      operationId: reportEvent
+      summary: Report a clinical event once; pending adjudications are created for each protocol the patient is enrolled in whose endpoints use this event type
+      x-roles: [clinician, research_coordinator, nurse]
+      parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClinicalEvent'}
+      responses:
+        '201':
+          description: Event stored with the adjudications it opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: {$ref: '#/components/schemas/ClinicalEvent'}
+                  adjudications: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /events/{eventId}/adjudications/{adjudicationId}:
+    parameters:
+      - {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: adjudicationId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    put:
+      tags: [Events]
+      operationId: adjudicate
+      summary: Record a human adjudication against the protocol's endpoint definition
+      x-roles: [principal_investigator, clinician]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adjudication_status]
+              properties:
+                adjudication_status: {type: string, enum: [in_review, adjudicated, not_an_event, insufficient_data]}
+                endpoint_code: {type: string, examples: [MI, ST, BLEED_BARC35, TLR]}
+                classification: {type: string, examples: [UDMI_type1, ARC2_ST_definite, BARC_3a]}
+                meets_endpoint: {type: boolean}
+                committee_reference: {type: string}
+                notes: {type: string}
+      responses:
+        '200':
+          description: Adjudication stored; adjudicated_by is the calling user
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Adjudication'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /protocols/{protocolId}/adjudication-queue:
+    parameters: [{$ref: '#/components/parameters/ProtocolId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Events]
+      operationId: adjudicationQueue
+      x-roles: [principal_investigator, clinician, research_coordinator]
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [pending, in_review, insufficient_data], default: pending}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Adjudications waiting, oldest event first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/Page'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /protocols/{protocolId}/follow-up-due:
+    parameters: [{$ref: '#/components/parameters/ProtocolId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Reports]
+      operationId: followUpDue
+      summary: Visits whose window is open, opening within N days, or closed without an assessment
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      parameters:
+        - {name: within_days, in: query, schema: {type: integer, minimum: 0, maximum: 180, default: 14}}
+        - {name: include_overdue, in: query, schema: {type: boolean, default: true}}
+      responses:
+        '200':
+          description: Due visits with patient name and contact (clinical roles only)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      allOf:
+                        - {$ref: '#/components/schemas/ScheduledVisit'}
+                        - type: object
+                          properties:
+                            enrolment_id: {type: string, format: uuid}
+                            patient_id: {type: string, format: uuid}
+                            local_patient_code: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /protocols/{protocolId}/missing-data:
+    parameters: [{$ref: '#/components/parameters/ProtocolId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Reports]
+      operationId: missingData
+      summary: Mandatory variables without a value, by visit and variable, with the assessments affected
+      x-roles: [clinician, research_coordinator, principal_investigator]
+      parameters:
+        - {name: visit_code, in: query, schema: {$ref: '#/components/schemas/VisitCode'}}
+      responses:
+        '200':
+          description: Missing-data summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        visit_code: {type: string}
+                        variable_code: {type: string}
+                        variable_label: {type: string}
+                        assessments_due: {type: integer}
+                        missing: {type: integer}
+                        assessment_ids: {type: array, items: {type: string, format: uuid}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /exports:
+    post:
+      tags: [Exports]
+      operationId: requestExport
+      summary: Request a pseudonymised research export (status requested)
+      x-roles: [research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/ActingRole'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExportRequest'}
+      responses:
+        '201':
+          description: Export requested
+          headers: {Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/ExportJob'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /exports/{exportId}:
+    parameters:
+      - {name: exportId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ActingRole'}
+    get:
+      tags: [Exports]
+      operationId: getExport
+      summary: Export status; when completed, a download URL valid for 15 minutes
+      x-roles: [research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Export job
+          content: {application/json: {schema: {$ref: '#/components/schemas/ExportJob'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /exports/{exportId}/decision:
+    parameters:
+      - {name: exportId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ActingRole'}
+    post:
+      tags: [Exports]
+      operationId: decideExport
+      summary: Approve or reject; the approver must not be the requester (four-eyes)
+      x-roles: [principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [approved, rejected]}
+                note: {type: string}
+      responses:
+        '200':
+          description: Decision stored; approved exports start running
+          content: {application/json: {schema: {$ref: '#/components/schemas/ExportJob'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.example.org/.well-known/openid-configuration
+
+  parameters:
+    CentreId:
+      name: X-Centre-Id
+      in: header
+      required: true
+      description: Acting centre; becomes app.centre_id for RLS.
+      schema: {type: string, format: uuid}
+    ActingRole:
+      name: X-Acting-Role
+      in: header
+      required: true
+      description: Role held at the acting centre; becomes SET LOCAL ROLE r_<role>.
+      schema:
+        type: string
+        enum: [assistant, nurse, clinician, research_coordinator, principal_investigator, centre_admin, platform_admin, audit_reader]
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 16, maxLength: 64}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Current ETag (row_version) of the resource.
+      schema: {type: string}
+    ChangeReason:
+      name: X-Change-Reason
+      in: header
+      required: false
+      description: Required when the call changes data saved earlier; stored in the audit log.
+      schema: {type: string, minLength: 3, maxLength: 500}
+    ChangeReasonRequired:
+      name: X-Change-Reason
+      in: header
+      required: true
+      schema: {type: string, minLength: 3, maxLength: 500}
+    ProtocolId:
+      name: protocolId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    EnrolmentId:
+      name: enrolmentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AssessmentId:
+      name: assessmentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    PatientId:
+      name: patientId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string}
+
+  headers:
+    ETag:
+      description: Quoted row_version of the resource
+      schema: {type: string}
+
+  responses:
+    Problem:
+      description: Error (RFC 9457)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        code:
+          type: string
+          enum: [VALIDATION_FAILED, PROTOCOL_MISMATCH, VALUE_OUT_OF_RANGE, CODE_NOT_ALLOWED, WRONG_VALUE_TYPE, MANDATORY_MISSING,
+                 ASSESSMENT_LOCKED, ASSESSMENT_INCOMPLETE, OPEN_QUERIES, CONSENT_REQUIRED, SITE_NOT_ACTIVE, NOT_ELIGIBLE, ALREADY_ENROLLED,
+                 DUPLICATE_VISIT, RISK_CATEGORY_UNKNOWN, FOUR_EYES, CHANGE_REASON_REQUIRED, STALE_VERSION,
+                 ROLE_NOT_HELD, FORBIDDEN, NOT_FOUND, CONFLICT, IDEMPOTENCY_MISMATCH, RETRY_LATER]
+        sqlstate: {type: string, description: Underlying SQLSTATE, for support only}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              variable_code: {type: string}
+              field: {type: string}
+              rule: {type: string}
+              message: {type: string}
+        current: {description: Current representation, returned with 412}
+
+    Page:
+      type: object
+      properties:
+        next_cursor: {type: [string, 'null']}
+
+    RegistryCode:
+      type: string
+      enum: [HF, LIPID, CAD]
+
+    VisitCode:
+      type: string
+      pattern: '^[A-Z0-9_]{1,12}$'
+
+    Registry:
+      type: object
+      properties:
+        registry_code: {$ref: '#/components/schemas/RegistryCode'}
+        registry_name: {type: string}
+        protocols:
+          type: array
+          items:
+            type: object
+            properties:
+              protocol_id: {type: string, format: uuid}
+              protocol_code: {type: string}
+              protocol_version: {type: integer}
+              status: {type: string}
+              site_status: {type: string}
+
+    Protocol:
+      type: object
+      properties:
+        protocol_id: {type: string, format: uuid}
+        protocol_code: {type: string, examples: [CEMR-HF, CEMR-LIPID, CEMR-CAD]}
+        protocol_version: {type: integer}
+        registry_code: {$ref: '#/components/schemas/RegistryCode'}
+        title: {type: string}
+        status: {type: string}
+        requires_research_consent: {type: boolean}
+        visits:
+          type: array
+          items:
+            type: object
+            properties:
+              visit_code: {$ref: '#/components/schemas/VisitCode'}
+              visit_label: {type: string}
+              target_day: {type: integer}
+              window_before_days: {type: integer}
+              window_after_days: {type: integer}
+              repeats_every_days: {type: [integer, 'null']}
+        endpoints:
+          type: array
+          items:
+            type: object
+            properties:
+              endpoint_code: {type: string}
+              endpoint_label: {type: string}
+              endpoint_kind: {type: string, enum: [component, composite]}
+        rule_sets:
+          type: array
+          items:
+            type: object
+            properties:
+              rule_kind: {type: string}
+              rule_set_code: {type: string}
+              version: {type: integer}
+              status: {type: string}
+              role: {type: string, enum: [primary, secondary]}
+        row_version: {type: integer}
+
+    DictionaryVariable:
+      type: object
+      properties:
+        variable_code: {type: string}
+        definition_version: {type: integer}
+        category: {type: string}
+        variable_label: {type: string}
+        description: {type: string}
+        data_type: {type: string, enum: [numeric, integer, text, date, boolean, coded, multi_coded]}
+        unit: {type: [string, 'null']}
+        allowed_values:
+          type: [array, 'null']
+          items: {type: object, properties: {code: {type: string}, label: {type: string}}}
+        min_value: {type: [number, 'null']}
+        max_value: {type: [number, 'null']}
+        source_kind: {type: string, enum: [emr_derived, entered, calculated]}
+        emr_source: {type: [string, 'null']}
+        visit_code: {type: string}
+        requirement: {type: string, enum: [mandatory, conditional, optional]}
+        condition_text: {type: [string, 'null']}
+
+    Suggestion:
+      type: object
+      properties:
+        suggestion_id: {type: string, format: uuid}
+        patient_id: {type: string, format: uuid}
+        registry_code: {$ref: '#/components/schemas/RegistryCode'}
+        trigger_diagnosis_id: {type: [string, 'null'], format: uuid}
+        suggested_at: {type: string, format: date-time}
+        status: {type: string, enum: [open, screening_started, dismissed, not_eligible]}
+        dismiss_reason: {type: [string, 'null']}
+        row_version: {type: integer}
+
+    EnrolmentStatus:
+      type: string
+      enum: [screening, screen_failed, enrolled, completed, withdrawn, lost_to_follow_up, deceased]
+
+    Enrolment:
+      type: object
+      properties:
+        enrolment_id: {type: string, format: uuid}
+        patient_id: {type: string, format: uuid}
+        protocol_id: {type: string, format: uuid}
+        registry_code: {$ref: '#/components/schemas/RegistryCode'}
+        screening_date: {type: string, format: date}
+        enrolment_date: {type: [string, 'null'], format: date}
+        index_date: {type: [string, 'null'], format: date}
+        eligibility_status: {type: string, enum: [pending_review, eligible, ineligible]}
+        consent_id: {type: [string, 'null'], format: uuid}
+        enrolment_status: {$ref: '#/components/schemas/EnrolmentStatus'}
+        status_changed_on: {type: [string, 'null'], format: date}
+        study_subject_code: {type: [string, 'null'], examples: [HF-7K2M9Q]}
+        details: {type: [object, 'null']}
+        schedule: {type: array, items: {$ref: '#/components/schemas/ScheduledVisit'}}
+        row_version: {type: integer}
+
+    HfEnrolmentDetails:
+      type: object
+      title: HF enrolment details (registry.hf_enrolment_details)
+      required: [registry_code, hf_status_at_enrolment, primary_aetiology, baseline_phenotype]
+      properties:
+        registry_code: {const: HF}
+        hf_status_at_enrolment: {type: string, enum: [newly_diagnosed, prevalent, post_discharge]}
+        hf_diagnosis_date: {type: string, format: date}
+        hf_diagnosis_date_precision: {type: string, enum: [day, month, year]}
+        index_admission_date: {type: string, format: date}
+        index_discharge_date: {type: string, format: date, description: Required when post_discharge}
+        primary_aetiology: {type: string, enum: [ischaemic, dilated_non_ischaemic, hypertensive, valvular, rheumatic_valvular, tachycardia_induced, peripartum, myocarditis, infiltrative, hypertrophic, chemotherapy_related, alcohol_related, congenital, other, unknown]}
+        secondary_aetiologies: {type: array, items: {type: string}}
+        baseline_lvef: {type: number, minimum: 5, maximum: 90}
+        baseline_lvef_investigation_id: {type: string, format: uuid}
+        prior_lowest_lvef: {type: number, minimum: 5, maximum: 90}
+        baseline_phenotype: {type: string, enum: [HFrEF, HFmrEF, HFpEF, HFimpEF]}
+
+    LipidEnrolmentDetails:
+      type: object
+      title: Lipid enrolment details (registry.lipid_enrolment_details)
+      description: Risk categories per guideline are set per assessment, via PUT /assessments/{id}/lipid/targets.
+      required: [registry_code, prevention_type, categories, baseline_ldl_kind, baseline_on_llt]
+      properties:
+        registry_code: {const: LIPID}
+        prevention_type: {type: string, enum: [primary, secondary]}
+        categories:
+          type: array
+          minItems: 1
+          items: {type: string, enum: [primary_prevention, secondary_prevention, established_cad, post_mi, post_pci, post_cabg, diabetes, familial_hypercholesterolaemia, elevated_lpa, statin_intolerance, ckd, stroke_tia, pad]}
+        fh_diagnosis_basis: {type: string, enum: [dlcn, simon_broome, genetic, clinical]}
+        dlcn_score: {type: integer, minimum: 0, maximum: 30}
+        statin_intolerance_type: {type: string, enum: [partial, complete]}
+        baseline_ldl_kind: {type: string, enum: [untreated, on_treatment_at_enrolment, imputed_untreated]}
+        baseline_ldl_mg_dl: {type: number, minimum: 5, maximum: 1000}
+        baseline_ldl_result_id: {type: string, format: uuid}
+        baseline_on_llt: {type: boolean}
+        baseline_statin_intensity: {type: string, enum: [none, low, moderate, high]}
+        lpa_value: {type: number, minimum: 0}
+        lpa_unit: {type: string, enum: [nmol/L, mg/dL]}
+        lpa_result_id: {type: string, format: uuid}
+
+    CadEnrolmentDetails:
+      type: object
+      title: CAD enrolment details
+      required: [registry_code, presentation, categories, index_event_date]
+      properties:
+        registry_code: {const: CAD}
+        presentation: {type: string, enum: [chronic_coronary_syndrome, STEMI, NSTEMI, unstable_angina, prior_mi_stable, prior_revascularisation_stable, other]}
+        categories:
+          type: array
+          items: {type: string, enum: [chronic_coronary_syndrome, acute_coronary_syndrome, STEMI, NSTEMI, unstable_angina, previous_mi, previous_pci, previous_cabg, multivessel, left_main, cto, bifurcation]}
+        index_event_date: {type: string, format: date}
+        killip_class_at_presentation: {type: string, enum: [I, II, III, IV]}
+        ccs_class_at_enrolment: {type: string, enum: ['0', I, II, III, IV]}
+        initial_strategy: {type: string, enum: [medical, pci, cabg, pci_planned, cabg_planned, hybrid]}
+
+    ScheduledVisit:
+      type: object
+      properties:
+        visit_code: {$ref: '#/components/schemas/VisitCode'}
+        occurrence: {type: integer, description: 1 for single visits; 1..n for repeating ANNUAL visits}
+        target_date: {type: string, format: date}
+        window_opens: {type: string, format: date}
+        window_closes: {type: string, format: date}
+        status: {type: string, enum: [not_due, due, overdue, done, missed, not_applicable]}
+        assessment_id: {type: [string, 'null'], format: uuid}
+
+    Assessment:
+      type: object
+      properties:
+        assessment_id: {type: string, format: uuid}
+        enrolment_id: {type: string, format: uuid}
+        visit_code: {$ref: '#/components/schemas/VisitCode'}
+        assessment_type: {type: string}
+        contact_mode: {type: string}
+        assessment_date: {type: string, format: date}
+        days_from_index: {type: integer}
+        within_window: {type: [boolean, 'null']}
+        completion_status: {type: string, enum: [partial, complete, missed, not_applicable]}
+        missed_reason: {type: [string, 'null']}
+        locked_at: {type: [string, 'null'], format: date-time}
+        row_version: {type: integer}
+
+    AssessmentDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Assessment'}
+        - type: object
+          properties:
+            variables:
+              type: array
+              items:
+                type: object
+                properties:
+                  definition: {$ref: '#/components/schemas/DictionaryVariable'}
+                  value: {oneOf: [{$ref: '#/components/schemas/VariableValue'}, {type: 'null'}]}
+            mandatory_missing: {type: array, items: {type: string}}
+
+    VariableValueInput:
+      type: object
+      required: [variable_code]
+      description: Exactly one of the value fields when value_status is present (the default).
+      properties:
+        variable_code: {type: string}
+        value_status: {type: string, enum: [present, not_done, unknown, not_applicable, declined], default: present}
+        value: {description: 'number, string (text, date or code), boolean, or array of codes, per data_type'}
+        unit: {type: string, description: Only when entering in an alternative unit the API converts}
+        row_version: {type: integer, description: Required when changing an existing value}
+
+    VariableValue:
+      type: object
+      properties:
+        variable_code: {type: string}
+        definition_version: {type: integer}
+        value_status: {type: string}
+        value: {}
+        source_kind: {type: string, enum: [entered, emr_derived, calculated, ai_extracted]}
+        source_table: {type: [string, 'null']}
+        source_row_id: {type: [string, 'null'], format: uuid}
+        verification_status: {type: string, enum: [unverified, verified, queried]}
+        updated_at: {type: [string, 'null'], format: date-time}
+        row_version: {type: integer}
+
+    GdmtPillar:
+      type: string
+      enum: [BB, RASI, MRA, SGLT2I]
+
+    GdmtStatus:
+      type: object
+      properties:
+        as_of: {type: string, format: date}
+        rule_set: {type: string, examples: [ESC_HF_2021_2023 v1]}
+        rule_set_status: {type: string}
+        hf_phenotype: {type: string}
+        pillars:
+          type: array
+          items:
+            type: object
+            properties:
+              pillar: {$ref: '#/components/schemas/GdmtPillar'}
+              drug_code: {type: [string, 'null']}
+              daily_dose: {type: [number, 'null']}
+              target_daily_dose: {type: [number, 'null']}
+              pct_of_target: {type: [number, 'null']}
+              eligible: {type: boolean}
+              dose_status: {type: string, enum: [at_target, below_target_uptitrating, below_target_max_tolerated, not_prescribed, not_indicated]}
+              source: {type: string, enum: [engine, clinician_override]}
+              reasons: {type: array, items: {type: string}}
+        pillars_on_treatment: {type: integer}
+        pillars_at_target: {type: integer}
+
+    LipidTargetAttainment:
+      type: object
+      properties:
+        guideline: {type: string, examples: [ESC_EAS_2019 v1, LAI_2020 v1]}
+        rule_set_status: {type: string, description: draft until the clinical lead verifies it}
+        is_primary: {type: boolean}
+        risk_category: {type: string}
+        ldl_target_mg_dl: {type: number}
+        ldl_mg_dl: {type: [number, 'null']}
+        ldl_pct_reduction: {type: [number, 'null']}
+        target_met: {type: [boolean, 'null']}
+        calculated_at: {type: string, format: date-time}
+
+    PciStent:
+      type: object
+      required: [sequence_number, diameter_mm, length_mm]
+      properties:
+        sequence_number: {type: integer, minimum: 1}
+        stent_device_id: {type: string, format: uuid}
+        device_text: {type: string}
+        diameter_mm: {type: number, minimum: 1.5, maximum: 6.0}
+        length_mm: {type: number, minimum: 6, maximum: 60}
+        deployment_atm: {type: integer, minimum: 4, maximum: 30}
+        post_dilatation_balloon_mm: {type: number}
+
+    PciLesion:
+      type: object
+      required: [lesion_number, vessel, treatment]
+      properties:
+        lesion_number: {type: integer, minimum: 1}
+        vessel: {type: string, enum: [LM, LAD, LCX, RCA, RAMUS, DIAGONAL, OM, PDA, PLV, SVG, LIMA, RIMA, RADIAL_GRAFT]}
+        segment_code: {type: string}
+        lesion_type_acc_aha: {type: string, enum: [A, B1, B2, C]}
+        lesion_length_mm: {type: number, minimum: 1, maximum: 200}
+        reference_diameter_mm: {type: number, minimum: 1.5, maximum: 7.0}
+        pre_stenosis_pct: {type: integer, minimum: 0, maximum: 100}
+        pre_timi_flow: {type: integer, minimum: 0, maximum: 3}
+        calcification: {type: string, enum: [none, mild, moderate, severe]}
+        is_cto: {type: boolean}
+        j_cto_score: {type: integer, minimum: 0, maximum: 5}
+        is_bifurcation: {type: boolean}
+        medina: {type: string, pattern: '^[01],[01],[01]$'}
+        bifurcation_technique: {type: string}
+        is_in_stent_restenosis: {type: boolean}
+        thrombus: {type: boolean}
+        lesion_preparation: {type: array, items: {type: string}}
+        post_dilatation: {type: boolean}
+        pre_physiology_value: {type: number}
+        post_physiology_value: {type: number}
+        final_timi_flow: {type: integer, minimum: 0, maximum: 3}
+        residual_stenosis_pct: {type: integer, minimum: 0, maximum: 100}
+        treatment: {type: string, enum: [stent, DCB, POBA, failed, deferred_by_physiology]}
+        stents: {type: array, items: {$ref: '#/components/schemas/PciStent'}}
+
+    PciProcedure:
+      type: object
+      required: [procedure_date, indication, lesions]
+      properties:
+        procedure_id: {type: string, format: uuid, readOnly: true}
+        encounter_id: {type: string, format: uuid}
+        angiogram_investigation_id: {type: string, format: uuid}
+        procedure_date: {type: string, format: date}
+        performed_at_facility: {type: string}
+        indication: {type: string, enum: [primary_pci_stemi, pharmacoinvasive, rescue_pci, nstemi, unstable_angina, chronic_coronary_syndrome, staged, silent_ischaemia, other]}
+        urgency: {type: string, enum: [elective, urgent, emergency, salvage]}
+        access_site: {type: string, enum: [radial, distal_radial, femoral, brachial, ulnar]}
+        imaging_guidance: {type: string, enum: [none, IVUS, OCT, IVUS_and_OCT]}
+        physiology: {type: string, enum: [none, FFR, iFR, RFR, QFR, other]}
+        mechanical_support: {type: string, enum: [none, IABP, Impella, ECMO]}
+        contrast_ml: {type: integer}
+        fluoroscopy_min: {type: number}
+        procedural_success: {type: boolean}
+        complications: {type: array, items: {type: string}}
+        source: {type: string, enum: [manual, ai_extracted, imported]}
+        source_document_id: {type: string, format: uuid}
+        status: {type: string, enum: [draft, final, entered_in_error]}
+        lesions: {type: array, minItems: 1, items: {$ref: '#/components/schemas/PciLesion'}}
+        row_version: {type: integer, readOnly: true}
+
+    ClinicalEvent:
+      type: object
+      required: [patient_id, event_type, event_date, source]
+      properties:
+        event_id: {type: string, format: uuid, readOnly: true}
+        patient_id: {type: string, format: uuid}
+        event_type: {type: string, enum: [death, mi, stroke, tia, hf_hospitalisation, urgent_hf_visit, worsening_hf_outpatient, pci, cabg, stent_thrombosis, bleeding, hyperkalaemia, hypotension, renal_deterioration, arrhythmia, device_therapy, other_cv_hospitalisation, non_cv_hospitalisation, other]}
+        event_date: {type: string, format: date}
+        event_date_precision: {type: string, enum: [day, month, year]}
+        is_historical: {type: boolean}
+        description: {type: string}
+        hospitalised: {type: boolean}
+        admission_date: {type: string, format: date}
+        discharge_date: {type: string, format: date}
+        facility_name: {type: string}
+        death_cause: {type: string, enum: [cardiovascular, non_cardiovascular, undetermined]}
+        death_cv_mode: {type: string}
+        mi_type: {type: string, enum: ['1', '2', '3', 4a, 4b, 4c, '5']}
+        stroke_type: {type: string, enum: [ischaemic, haemorrhagic, undetermined]}
+        bleeding_site: {type: string}
+        pci_procedure_id: {type: string, format: uuid}
+        target_lesion_id: {type: string, format: uuid}
+        source: {type: string, enum: [site_clinician, patient_report, relative_report, hospital_records, death_certificate, follow_up_call, imported]}
+        source_document_id: {type: string, format: uuid}
+
+    Adjudication:
+      type: object
+      properties:
+        adjudication_id: {type: string, format: uuid}
+        event_id: {type: string, format: uuid}
+        protocol_code: {type: string}
+        endpoint_code: {type: [string, 'null']}
+        event_type: {type: string}
+        event_date: {type: string, format: date}
+        adjudication_status: {type: string, enum: [pending, in_review, adjudicated, not_an_event, insufficient_data]}
+        classification: {type: [string, 'null']}
+        meets_endpoint: {type: [boolean, 'null']}
+        adjudicated_by: {type: [string, 'null'], format: uuid}
+        adjudicated_at: {type: [string, 'null'], format: date-time}
+        row_version: {type: integer}
+
+    ExportRequest:
+      type: object
+      required: [protocol_id, purpose, variable_codes, deidentification, file_format]
+      properties:
+        protocol_id: {type: string, format: uuid}
+        purpose: {type: string, minLength: 10}
+        centre_ids: {type: array, items: {type: string, format: uuid}}
+        cohort_filter: {type: object}
+        visit_codes: {type: array, items: {$ref: '#/components/schemas/VisitCode'}}
+        variable_codes: {type: array, minItems: 1, items: {type: string}}
+        deidentification: {type: string, enum: [pseudonymised_relative_days, pseudonymised_year_only, aggregate_only]}
+        file_format: {type: string, enum: [csv, xlsx, spss_csv, r_csv, stata_csv]}
+        include_data_dictionary: {type: boolean, default: true}
+
+    ExportJob:
+      allOf:
+        - {$ref: '#/components/schemas/ExportRequest'}
+        - type: object
+          properties:
+            export_id: {type: string, format: uuid}
+            requested_by: {type: string, format: uuid}
+            requested_at: {type: string, format: date-time}
+            status: {type: string, enum: [requested, approved, rejected, running, completed, failed, expired]}
+            approved_by: {type: [string, 'null'], format: uuid}
+            row_count: {type: [integer, 'null']}
+            file_sha256: {type: [string, 'null']}
+            download_url: {type: [string, 'null'], format: uri}
+            expires_at: {type: [string, 'null'], format: date-time}

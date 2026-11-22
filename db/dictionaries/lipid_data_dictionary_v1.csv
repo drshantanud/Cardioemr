@@ -1,0 +1,54 @@
+variable_code,category,label,data_type,unit,allowed_values,min,max,source_kind,emr_source_or_rule,BL,W6_12,M6,M12,ANNUAL
+age_at_index,Demographics,Age at index date,integer,years,,18,110,calculated,calc.age_at_index,M,,,,
+sex,Demographics,Sex,coded,,male; female; other; unknown,,,emr_derived,emr.registration_sex,M,,,,
+bmi,Demographics,Body-mass index,numeric,kg/m2,,10,70,calculated,calc.bmi,M,,,O,O
+prevention_type,Category,Primary or secondary prevention,coded,,primary; secondary,,,entered,,M,,,,
+lipid_categories,Category,Patient categories (all that apply),multi_coded,,primary_prevention; secondary_prevention; established_cad; post_mi; post_pci; post_cabg; diabetes; familial_hypercholesterolaemia; elevated_lpa; statin_intolerance; ckd; stroke_tia; pad,,,entered,,M,,,O,O
+has_cad,Clinical,Coronary artery disease,boolean,,,,,emr_derived,emr.active_diagnosis: DX_CAD,M,,,,
+prior_mi,Clinical,Previous myocardial infarction,boolean,,,,,emr_derived,emr.event_before_index: mi,M,,,,
+prior_stroke_tia,Clinical,Previous ischaemic stroke / TIA,boolean,,,,,emr_derived,emr.active_diagnosis: DX_STROKE,M,,,,
+has_pad,Clinical,Peripheral arterial disease,boolean,,,,,emr_derived,emr.active_diagnosis: DX_PAD,M,,,,
+has_diabetes,Clinical,Diabetes mellitus,boolean,,,,,emr_derived,emr.active_diagnosis: DX_DM,M,,,,
+has_ckd,Clinical,Chronic kidney disease,boolean,,,,,emr_derived,emr.active_diagnosis: DX_CKD,M,,,,
+has_hypertension,Clinical,Hypertension,boolean,,,,,emr_derived,emr.active_diagnosis: DX_HTN,M,,,,
+smoking_status,Clinical,Smoking status,coded,,never; former; current; unknown,,,emr_derived,emr.lifestyle_latest,M,,,O,O
+fh_basis,Clinical,FH diagnosis basis,coded,,dlcn; simon_broome; genetic; clinical,,,entered,,C,,,,
+dlcn_score,Clinical,DLCN score,integer,points,,0,30,entered,,C,,,,
+ldl_guideline,Risk and target,Guideline rule set used for target,text,,,,,calculated,calc.protocol_rule_set: registry_protocols.ldl_target_rule_set_id,M,M,M,M,M
+risk_category,Risk and target,ESC/EAS risk category,coded,,very_high; high; moderate; low; extreme,,,entered,,M,,,O,O
+ldl_target,Risk and target,LDL-C target applied,numeric,mg/dL,,10,200,calculated,calc.ldl_target: ref.ldl_target_rules,M,M,M,M,M
+lai_risk_category,Risk and target,LAI risk category,coded,,extreme_a; extreme_b; very_high; high; moderate; low,,,entered,,M,,,O,O
+ldl_target_lai,Risk and target,LDL-C target under LAI rule set,numeric,mg/dL,,10,200,calculated,calc.ldl_target: ref.ldl_target_rules (secondary rule set),M,M,M,M,M
+ldl_target_met_lai,Outcomes,LDL-C target attained under LAI,boolean,,,,,calculated,calc.ldl_target_met: secondary rule set,C,C,C,C,C
+baseline_ldl_kind,Lipids,Which value is the baseline LDL-C,coded,,untreated; on_treatment_at_enrolment; imputed_untreated,,,entered,,M,,,,
+lipid_test_status,Lipids,Lipid profile done in this visit window,coded,,tested_in_window; tested_outside_window; not_tested,,,calculated,calc.lab_in_window: LDL_C,M,M,M,M,M
+lipid_test_date,Lipids,Lipid sample date,date,,,,,emr_derived,emr.lab_in_window: lab_results.collected_at,C,C,C,C,C
+ldl_c,Lipids,LDL cholesterol,numeric,mg/dL,,5,1000,emr_derived,emr.lab_in_window: LDL_C,C,C,C,C,C
+ldl_method,Lipids,LDL-C method,coded,,direct; friedewald; martin_hopkins; sampson,,,emr_derived,emr.lab_in_window: lab_results.method,C,C,C,C,C
+total_cholesterol,Lipids,Total cholesterol,numeric,mg/dL,,40,1500,emr_derived,emr.lab_in_window: TC,C,C,C,C,C
+hdl_c,Lipids,HDL cholesterol,numeric,mg/dL,,5,200,emr_derived,emr.lab_in_window: HDL_C,C,C,C,C,C
+triglycerides,Lipids,Triglycerides,numeric,mg/dL,,10,10000,emr_derived,emr.lab_in_window: TG,C,C,C,C,C
+non_hdl_c,Lipids,Non-HDL cholesterol,numeric,mg/dL,,10,1500,calculated,calc.non_hdl: TC - HDL-C,C,C,C,C,C
+apob,Advanced lipids,Apolipoprotein B,numeric,mg/dL,,10,400,emr_derived,emr.lab_in_window: APOB,O,,,O,O
+lpa_value,Advanced lipids,"Lipoprotein(a), as reported",numeric,,,0,1000,emr_derived,emr.lab_ever: LPA_NMOL_L or LPA_MG_DL,O,,,,
+lpa_unit,Advanced lipids,Lp(a) unit,coded,,nmol/L; mg/dL,,,emr_derived,emr.lab_ever: analyte used,C,,,,
+lpa_elevated,Advanced lipids,Lp(a) elevated (>= 125 nmol/L or >= 50 mg/dL),boolean,,,,,calculated,calc.lpa_elevated,C,,,,
+statin_drug,Treatment,Statin,text,,,,,emr_derived,emr.active_drug_class: STATIN,M,M,M,M,M
+statin_daily_dose,Treatment,Statin daily dose,numeric,mg/day,,0,80,emr_derived,emr.active_drug_class: daily_dose,C,C,C,C,C
+statin_intensity,Treatment intensity,Statin intensity,coded,,none; low; moderate; high,,,calculated,calc.statin_intensity: ref.statin_intensity_rules,M,M,M,M,M
+on_ezetimibe,Treatment,Ezetimibe,boolean,,,,,emr_derived,emr.active_drug_class: EZETIMIBE,M,M,M,M,M
+on_pcsk9_mab,Treatment,PCSK9 monoclonal antibody,boolean,,,,,emr_derived,emr.active_drug_class: PCSK9_MAB,M,M,M,M,M
+on_inclisiran,Treatment,Inclisiran,boolean,,,,,emr_derived,emr.active_drug_class: PCSK9_SIRNA,M,M,M,M,M
+on_bempedoic_acid,Treatment,Bempedoic acid,boolean,,,,,emr_derived,emr.active_drug_class: BEMPEDOIC_ACID,M,M,M,M,M
+therapy_change,Treatment,Change to lipid therapy at this visit,coded,,none; statin_initiated; statin_intensified; non_statin_added; reduced; stopped,,,calculated,calc.llt_change vs previous visit,,M,M,M,M
+non_intensification_reason,Treatment,Reason therapy not intensified when not at target,coded,,at_target; intolerance; cost; patient_refusal; clinician_judgement; awaiting_repeat_test; other,,,entered,,,C,C,C,C
+ck,Safety,Creatine kinase,numeric,U/L,,5,100000,emr_derived,emr.lab_in_window: CK,O,O,O,O,O
+alt,Safety,ALT,numeric,U/L,,1,5000,emr_derived,emr.lab_in_window: ALT,O,O,O,O,O
+muscle_symptoms,Safety,Statin-associated muscle symptoms,coded,,none; myalgia; myositis; rhabdomyolysis,,,entered,,,M,M,M,M
+adherence,Adherence,Adherence to lipid-lowering therapy,coded,,good; partial; poor; unknown,,,emr_derived,emr.adherence_latest,,M,M,M,M
+ldl_abs_reduction,Outcomes,Absolute LDL-C reduction from baseline,numeric,mg/dL,,-500,1000,calculated,calc.ldl_abs_reduction: baseline - current,,C,C,C,C
+ldl_pct_reduction,Outcomes,% LDL-C reduction from baseline,numeric,%,,-500,100,calculated,calc.ldl_pct_reduction: (baseline - current) / baseline x 100,,C,C,C,C
+reduction_50pct_met,Outcomes,>= 50% LDL-C reduction achieved,boolean,,,,,calculated,calc.ldl_pct_reduction >= 50,,C,C,C,C
+ldl_target_met,Outcomes,LDL-C target attained,boolean,,,,,calculated,calc.ldl_target_met: ref.ldl_target_rules,C,C,C,C,C
+target_status,Outcomes,Target status (separates no repeat test from not at target),coded,,at_target; not_at_target_on_max_tolerated; not_at_target_escalation_pending; not_at_target_adherence_issue; no_repeat_test,,,calculated,calc.lipid_target_status,,M,M,M,M
+cv_events_since_last,Outcomes,Cardiovascular events since previous visit,integer,count,,0,50,calculated,"calc.event_count: mi, stroke, pci, cabg, death (cv)",,M,M,M,M

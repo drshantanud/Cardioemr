@@ -1,0 +1,95 @@
+variable_code,category,label,data_type,unit,allowed_values,min,max,source_kind,emr_source_or_rule,BL,M1,M6,M12,ANNUAL
+age_at_index,Demographics,Age at index date,integer,years,,18,110,calculated,calc.age_at_index: registration DOB to enrolment index date,M,,,,
+sex,Demographics,Sex,coded,,male; female; other; unknown,,,emr_derived,emr.registration_sex: patient_registrations.sex,M,,,,
+weight_kg,Demographics,Weight,numeric,kg,,25,250,emr_derived,emr.vitals_in_window: vital_signs.weight_kg in visit window,M,,,O,O
+bmi,Demographics,Body-mass index,numeric,kg/m2,,10,70,calculated,calc.bmi: weight / height^2,M,,,O,O
+presentation,Presentation,Presentation at index event,coded,,chronic_coronary_syndrome; STEMI; NSTEMI; unstable_angina; prior_mi_stable; prior_revascularisation_stable; other,,,entered,,M,,,,
+cad_categories,Presentation,CAD categories (all that apply),multi_coded,,chronic_coronary_syndrome; acute_coronary_syndrome; STEMI; NSTEMI; unstable_angina; previous_mi; previous_pci; previous_cabg; multivessel; left_main; cto; bifurcation,,,entered,,M,,,O,O
+index_event_date,Presentation,Index event date,date,,,,,entered,,M,,,,
+symptom_type,Presentation,Presenting symptom,coded,,none; typical_angina; atypical_angina; non_anginal_pain; dyspnoea_equivalent; silent_ischaemia,,,entered,,M,,,,
+symptom_to_door_hours,Presentation,Symptom onset to first medical contact (ACS),numeric,hours,,0,720,entered,,C,,,,
+reperfusion_strategy,Presentation,Reperfusion strategy (STEMI),coded,,primary_pci; pharmacoinvasive; thrombolysis_only; rescue_pci; none_late_presentation; none_other,,,entered,,C,,,,
+killip_class,Presentation,Killip class at presentation (ACS),coded,,I; II; III; IV,,,entered,,C,,,,
+ccs_class,Clinical,Angina class (CCS),coded,,0; I; II; III; IV,,,emr_derived,emr.clinical_assessment: clinical_assessments.ccs_class,M,M,M,M,M
+has_diabetes,Risk factors,Diabetes mellitus,boolean,,,,,emr_derived,emr.active_diagnosis: DX_DM,M,,,O,O
+has_hypertension,Risk factors,Hypertension,boolean,,,,,emr_derived,emr.active_diagnosis: DX_HTN,M,,,,
+has_dyslipidaemia,Risk factors,Dyslipidaemia,boolean,,,,,emr_derived,"emr.active_diagnosis: DX_DYSLIPIDAEMIA, DX_FH or on lipid-lowering therapy",M,,,,
+smoking_status,Risk factors,Smoking status,coded,,never; former; current; unknown,,,emr_derived,emr.lifestyle_latest,M,M,M,M,M
+family_history_premature_cad,Risk factors,Premature CAD in a first-degree relative,boolean,,,,,emr_derived,"emr.family_history: is_premature, CAD concepts",M,,,,
+has_ckd,Risk factors,Chronic kidney disease (eGFR < 60 or diagnosis),boolean,,,,,emr_derived,emr.active_diagnosis: DX_CKD or eGFR < 60 twice 90 d apart,M,,,,
+prior_mi,History,Previous myocardial infarction (before index event),boolean,,,,,emr_derived,emr.event_before_index: mi,M,,,,
+prior_pci,History,Previous PCI (before index event),boolean,,,,,emr_derived,emr.event_before_index: pci,M,,,,
+prior_cabg,History,Previous CABG,boolean,,,,,emr_derived,emr.event_before_index: cabg,M,,,,
+prior_stroke_tia,History,Previous ischaemic stroke / TIA,boolean,,,,,emr_derived,emr.active_diagnosis: DX_STROKE,M,,,,
+has_pad,History,Peripheral arterial disease,boolean,,,,,emr_derived,emr.active_diagnosis: DX_PAD,M,,,,
+has_af,History,Atrial fibrillation / flutter,boolean,,,,,emr_derived,emr.active_diagnosis: DX_AF,M,,,O,O
+has_heart_failure,History,Heart failure,boolean,,,,,emr_derived,emr.active_diagnosis: DX_HF,M,,,,
+systolic_bp,Clinical,Systolic blood pressure,integer,mmHg,,60,250,emr_derived,emr.vitals_in_window: vital_signs.systolic_bp,M,M,M,M,M
+diastolic_bp,Clinical,Diastolic blood pressure,integer,mmHg,,30,150,emr_derived,emr.vitals_in_window: vital_signs.diastolic_bp,M,M,M,M,M
+heart_rate,Clinical,Heart rate,integer,bpm,,30,200,emr_derived,emr.vitals_in_window: vital_signs.heart_rate,M,M,M,M,M
+peak_troponin,Laboratory,Peak high-sensitivity troponin (index admission),numeric,ng/L,,0,500000,emr_derived,emr.lab_peak_in_admission: lab_results HS_TNI or HS_TNT,C,,,,
+troponin_assay,Laboratory,Troponin assay,coded,,HS_TNI; HS_TNT,,,emr_derived,emr.lab_peak_in_admission: analyte of peak_troponin,C,,,,
+creatinine,Laboratory,Serum creatinine,numeric,mg/dL,,0.2,20,emr_derived,emr.lab_in_window: lab_results CREATININE,M,,,M,O
+egfr,Laboratory,"eGFR (CKD-EPI 2021, race-free)",numeric,mL/min/1.73m2,,2,200,calculated,"calc.egfr_ckd_epi_2021: creatinine, age, sex",M,,,M,O
+haemoglobin,Laboratory,Haemoglobin,numeric,g/dL,,3,22,emr_derived,emr.lab_in_window: lab_results HB,M,O,,O,O
+ldl_c,Laboratory,LDL cholesterol,numeric,mg/dL,,5,1000,emr_derived,emr.lab_in_window: lab_results LDL_C,M,O,M,M,M
+hdl_c,Laboratory,HDL cholesterol,numeric,mg/dL,,5,200,emr_derived,emr.lab_in_window: lab_results HDL_C,M,,O,O,O
+triglycerides,Laboratory,Triglycerides,numeric,mg/dL,,10,10000,emr_derived,emr.lab_in_window: lab_results TG,M,,O,O,O
+hba1c,Laboratory,HbA1c,numeric,%,,3,20,emr_derived,emr.lab_in_window: lab_results HBA1C,M,,,C,C
+lpa,Laboratory,"Lipoprotein(a), as reported",numeric,,,0,1000,emr_derived,"emr.lab_ever: lab_results LPA_NMOL_L or LPA_MG_DL, unit kept",O,,,,
+lvef,Echo,LV ejection fraction,numeric,%,,5,90,emr_derived,emr.echo_in_window: echo_reports.lvef,M,,,O,O
+rwma,Echo,Regional wall-motion abnormality,boolean,,,,,emr_derived,emr.echo_in_window: echo_reports regional wall motion,M,,,O,
+angiography_done,Coronary anatomy,Coronary angiography for the index event,boolean,,,,,emr_derived,emr.index_angiogram: coronary_angiograms within 30 d of index,M,,,,
+angiography_date,Coronary anatomy,Date of index angiogram,date,,,,,emr_derived,emr.index_angiogram: investigations.performed_on,C,,,,
+dominance,Coronary anatomy,Coronary dominance,coded,,right; left; codominant,,,emr_derived,emr.index_angiogram: coronary_angiograms.dominance,C,,,,
+disease_extent,Coronary anatomy,Disease extent,coded,,normal; non_obstructive; SVD; DVD; TVD,,,emr_derived,emr.index_angiogram: coronary_angiograms.disease_extent,C,,,,
+diseased_vessels,Coronary anatomy,"Vessels with significant stenosis (LM >= 50%, others >= 70%)",multi_coded,,LM; LAD; LCX; RCA,,,calculated,calc.diseased_vessels: coronary_segment_findings,C,,,,
+left_main_disease,Coronary anatomy,Left main stenosis >= 50%,boolean,,,,,emr_derived,emr.index_angiogram: coronary_angiograms.left_main_disease,C,,,,
+proximal_lad_disease,Coronary anatomy,Proximal LAD stenosis >= 70%,boolean,,,,,calculated,calc.segment_stenosis: LAD segment 6 >= 70%,C,,,,
+cto_present,Coronary anatomy,Chronic total occlusion present,boolean,,,,,calculated,calc.segment_flag: coronary_segment_findings.is_cto,C,,,,
+bifurcation_disease,Coronary anatomy,Bifurcation lesion present,boolean,,,,,calculated,calc.segment_flag: coronary_segment_findings.is_bifurcation,C,,,,
+syntax_score,Coronary anatomy,SYNTAX score,numeric,points,,0,100,emr_derived,emr.index_angiogram: coronary_angiograms.syntax_score,O,,,,
+initial_strategy,Treatment strategy,Initial treatment strategy,coded,,medical; pci; cabg; pci_planned; cabg_planned; hybrid,,,entered,,M,,,,
+index_pci_done,Treatment strategy,PCI for the index event,boolean,,,,,calculated,"calc.index_pci: pci_procedures within 30 d of index, status final",M,,,,
+index_cabg_done,Treatment strategy,CABG for the index event,boolean,,,,,calculated,calc.event_in_window: cabg within 90 d of index,M,O,,,
+cabg_date,Treatment strategy,CABG date,date,,,,,emr_derived,emr.event_in_window: clinical_events cabg,C,C,,,
+pci_date,Index PCI,Index PCI date,date,,,,,emr_derived,emr.index_pci: pci_procedures.procedure_date,C,,,,
+pci_indication,Index PCI,Clinical indication,coded,,primary_pci_stemi; pharmacoinvasive; rescue_pci; nstemi; unstable_angina; chronic_coronary_syndrome; staged; silent_ischaemia; other,,,emr_derived,emr.index_pci: pci_procedures.indication,C,,,,
+pci_urgency,Index PCI,Urgency,coded,,elective; urgent; emergency; salvage,,,emr_derived,emr.index_pci: pci_procedures.urgency,C,,,,
+pci_access_site,Index PCI,Access site,coded,,radial; distal_radial; femoral; brachial; ulnar,,,emr_derived,emr.index_pci: pci_procedures.access_site,C,,,,
+pci_vessels_treated,Index PCI,Vessels treated,multi_coded,,LM; LAD; LCX; RCA; RAMUS; DIAGONAL; OM; PDA; PLV; SVG; LIMA; RIMA; RADIAL_GRAFT,,,calculated,calc.pci_summary: pci_lesions.vessel,C,,,,
+pci_lesions_treated,Index PCI,Number of lesions treated,integer,count,,1,20,calculated,calc.pci_summary: count pci_lesions,C,,,,
+pci_stents_count,Index PCI,Number of stents,integer,count,,0,20,calculated,calc.pci_summary: count pci_stents,C,,,,
+pci_total_stent_length_mm,Index PCI,Total stent length,numeric,mm,,0,400,calculated,calc.pci_summary: sum pci_stents.length_mm,C,,,,
+pci_min_stent_diameter_mm,Index PCI,Smallest stent diameter,numeric,mm,,1.5,6,calculated,calc.pci_summary: min pci_stents.diameter_mm,C,,,,
+pci_device_types,Index PCI,Device types used,multi_coded,,DES; BMS; BVS; DCB; covered,,,calculated,calc.pci_summary: ref.stent_devices.device_type,C,,,,
+pci_bifurcation_treated,Index PCI,Bifurcation lesion treated,boolean,,,,,calculated,calc.pci_summary: any pci_lesions.is_bifurcation,C,,,,
+pci_cto_treated,Index PCI,CTO treated,boolean,,,,,calculated,calc.pci_summary: any pci_lesions.is_cto,C,,,,
+pci_imaging,Index PCI,Intravascular imaging,coded,,none; IVUS; OCT; IVUS_and_OCT,,,emr_derived,emr.index_pci: pci_procedures.imaging_guidance,C,,,,
+pci_physiology,Index PCI,Physiology assessment,coded,,none; FFR; iFR; RFR; QFR; other,,,emr_derived,emr.index_pci: pci_procedures.physiology,C,,,,
+pci_final_timi3,Index PCI,Final TIMI 3 flow in every treated lesion,boolean,,,,,calculated,calc.pci_summary: all pci_lesions.final_timi_flow = 3,C,,,,
+pci_success,Index PCI,Procedural success,boolean,,,,,emr_derived,emr.index_pci: pci_procedures.procedural_success,C,,,,
+pci_complications,Index PCI,Procedural complications,multi_coded,,none; dissection; perforation; no_reflow; side_branch_occlusion; acute_stent_thrombosis; access_bleeding; haematoma; pseudoaneurysm; contrast_nephropathy; arrhythmia; stroke; death; other,,,emr_derived,emr.index_pci: pci_procedures.complications,C,,,,
+staged_pci_planned,Index PCI,Staged PCI planned,boolean,,,,,entered,,O,,,,
+on_aspirin,Medication,Aspirin,boolean,,,,,emr_derived,emr.active_drug_class: ANTIPLATELET (aspirin) on visit date,M,M,M,M,M
+p2y12_agent,Medication,P2Y12 inhibitor,coded,,none; clopidogrel; ticagrelor; prasugrel,,,emr_derived,emr.active_drug_class: P2Y12I on visit date,M,M,M,M,M
+on_dapt,Medication,Dual antiplatelet therapy,boolean,,,,,calculated,calc.dapt: aspirin and P2Y12 inhibitor both active,M,M,M,M,M
+dapt_planned_months,Medication,Planned DAPT duration,integer,months,,0,36,entered,,C,,,,
+on_oac,Medication,Oral anticoagulant,boolean,,,,,emr_derived,emr.active_drug_class: ANTICOAGULANT on visit date,M,M,M,M,M
+statin_intensity,Medication,Statin intensity,coded,,none; low; moderate; high,,,calculated,calc.statin_intensity: ref.statin_intensity_rules,M,M,M,M,M
+on_ezetimibe,Medication,Ezetimibe,boolean,,,,,emr_derived,emr.active_drug_class: EZETIMIBE,M,M,M,M,M
+on_pcsk9_therapy,Medication,PCSK9 antibody or inclisiran,boolean,,,,,emr_derived,"emr.active_drug_class: PCSK9_MAB, PCSK9_SIRNA",O,O,O,O,O
+on_beta_blocker,Medication,Beta-blocker,boolean,,,,,emr_derived,emr.active_drug_class: BETA_BLOCKER,M,M,M,M,M
+on_acei_arb_arni,Medication,"ACE inhibitor, ARB or ARNI",boolean,,,,,emr_derived,"emr.active_drug_class: ACEI, ARB, ARNI",M,M,M,M,M
+on_sglt2i,Medication,SGLT2 inhibitor,boolean,,,,,emr_derived,emr.active_drug_class: SGLT2I,O,O,O,O,O
+vital_status,Outcomes,Vital status at visit,coded,,alive; dead; unknown,,,entered,,,M,M,M,M
+cv_death,Outcomes,Cardiovascular death,boolean,,,,,calculated,calc.event_exists: death with death_cause = cardiovascular,,M,M,M,M
+mi_since_last,Outcomes,Myocardial infarction since previous visit,boolean,,,,,calculated,calc.event_exists: mi,,M,M,M,M
+stroke_since_last,Outcomes,Stroke since previous visit,boolean,,,,,calculated,calc.event_exists: stroke,,M,M,M,M
+tlr_since_last,Outcomes,Target lesion revascularisation since previous visit,boolean,,,,,calculated,calc.event_exists: pci or cabg on an index target lesion,,M,M,M,M
+tvr_since_last,Outcomes,Target vessel revascularisation since previous visit,boolean,,,,,calculated,calc.event_exists: pci or cabg in an index treated vessel,,M,M,M,M
+any_revasc_since_last,Outcomes,Any repeat revascularisation since previous visit,boolean,,,,,calculated,"calc.event_exists: pci, cabg (excluding planned staged PCI)",,M,M,M,M
+stent_thrombosis_since_last,Outcomes,Stent thrombosis since previous visit,boolean,,,,,calculated,calc.event_exists: stent_thrombosis,,M,M,M,M
+major_bleeding_since_last,Outcomes,Bleeding BARC 3 to 5 since previous visit,boolean,,,,,calculated,"calc.event_exists: bleeding, BARC 3-5 by adjudication or reported severity",,M,M,M,M
+hf_hospitalisation_since_last,Outcomes,Heart failure hospitalisation since previous visit,boolean,,,,,calculated,calc.event_exists: hf_hospitalisation,,M,M,M,M
+dapt_status,Outcomes,DAPT status at visit,coded,,on_dapt; completed_as_planned; interrupted; stopped_bleeding; stopped_other; never_started,,,entered,,,M,M,M,O

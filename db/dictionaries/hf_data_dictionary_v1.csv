@@ -1,0 +1,84 @@
+variable_code,category,label,data_type,unit,allowed_values,min,max,source_kind,emr_source_or_rule,BL,M1,M3,M6,M12,ANNUAL
+age_at_index,Demographics,Age at index date,integer,years,,18,110,calculated,calc.age_at_index: registration DOB to enrolment index date,M,,,,,
+sex,Demographics,Sex,coded,,male; female; other; unknown,,,emr_derived,emr.registration_sex: patient_registrations.sex,M,,,,,
+height_cm,Demographics,Height,numeric,cm,,100,230,emr_derived,"emr.vitals_latest: vital_signs.height_cm, latest in 365 d",M,,,,,
+weight_kg,Demographics,Weight,numeric,kg,,25,250,emr_derived,emr.vitals_in_window: vital_signs.weight_kg in visit window,M,M,M,M,M,M
+bmi,Demographics,Body-mass index,numeric,kg/m2,,10,70,calculated,calc.bmi: weight / height^2,M,M,M,M,M,M
+hf_status_at_enrolment,Enrolment,HF status at enrolment,coded,,newly_diagnosed; prevalent; post_discharge,,,entered,,M,,,,,
+hf_diagnosis_date,Enrolment,"Date HF first diagnosed (day, month or year)",date,,,,,entered,,M,,,,,
+index_discharge_date,Enrolment,Discharge date of index HF admission,date,,,,,entered,,C,,,,,
+nyha_class,Clinical,NYHA functional class,coded,,I; II; III; IV,,,emr_derived,emr.clinical_assessment: clinical_assessments.nyha_class,M,M,M,M,M,M
+systolic_bp,Clinical,Systolic blood pressure,integer,mmHg,,60,250,emr_derived,emr.vitals_in_window: vital_signs.systolic_bp,M,M,M,M,M,M
+diastolic_bp,Clinical,Diastolic blood pressure,integer,mmHg,,30,150,emr_derived,emr.vitals_in_window: vital_signs.diastolic_bp,M,M,M,M,M,M
+heart_rate,Clinical,Heart rate,integer,bpm,,30,200,emr_derived,emr.vitals_in_window: vital_signs.heart_rate,M,M,M,M,M,M
+congestion_status,Clinical,Clinical congestion,coded,,euvolaemic; mild; moderate; severe,,,emr_derived,emr.clinical_assessment: clinical_assessments.congestion_status,M,M,M,M,M,M
+jvp_raised,Clinical,JVP raised,boolean,,,,,emr_derived,emr.clinical_assessment: clinical_assessments.jvp = raised,O,O,O,O,O,O
+peripheral_oedema,Clinical,Peripheral oedema present,boolean,,,,,emr_derived,emr.clinical_assessment: peripheral_oedema <> none,O,O,O,O,O,O
+primary_aetiology,Aetiology,Primary aetiology,coded,,ischaemic; dilated_non_ischaemic; hypertensive; valvular; rheumatic_valvular; tachycardia_induced; peripartum; myocarditis; infiltrative; hypertrophic; chemotherapy_related; alcohol_related; congenital; other; unknown,,,entered,,M,,,,,
+secondary_aetiologies,Aetiology,Contributing aetiologies,multi_coded,,ischaemic; dilated_non_ischaemic; hypertensive; valvular; rheumatic_valvular; tachycardia_induced; peripartum; myocarditis; infiltrative; hypertrophic; chemotherapy_related; alcohol_related; congenital; other; unknown,,,entered,,O,,,,,
+prior_lowest_lvef,Phenotype,Lowest documented LVEF before enrolment,numeric,%,,5,90,entered,,C,,,,,
+hf_phenotype,Phenotype,HF phenotype (clinician-confirmed),coded,,HFrEF; HFmrEF; HFpEF; HFimpEF,,,calculated,"calc.hf_phenotype: registry.classify_hf_phenotype(lvef, prior_lowest_lvef)",M,,,O,M,O
+echo_date,Echo,Date of echocardiogram used,date,,,,,emr_derived,emr.echo_in_window: investigations.performed_on,M,,,O,M,O
+lvef,Echo,LV ejection fraction,numeric,%,,5,90,emr_derived,emr.echo_in_window: echo_reports.lvef,M,,,O,M,O
+lvef_method,Echo,LVEF method,coded,,biplane_simpson; 3d; teichholz; visual; other,,,emr_derived,emr.echo_in_window: echo_reports.lvef_method,M,,,O,M,O
+lvedd_mm,Echo,LV end-diastolic diameter,numeric,mm,,20,100,emr_derived,emr.echo_in_window: echo_reports.lvedd_mm,M,,,O,O,O
+lvesd_mm,Echo,LV end-systolic diameter,numeric,mm,,10,90,emr_derived,emr.echo_in_window: echo_reports.lvesd_mm,O,,,O,O,O
+la_volume_index,Echo,LA volume index,numeric,mL/m2,,5,300,emr_derived,emr.echo_in_window: echo_reports.la_volume_index_ml_m2,O,,,O,O,O
+tapse_mm,Echo,TAPSE,numeric,mm,,2,40,emr_derived,emr.echo_in_window: echo_reports.tapse_mm,M,,,O,O,O
+rv_function,Echo,RV systolic function,coded,,normal; mildly_reduced; moderately_reduced; severely_reduced,,,emr_derived,emr.echo_in_window: echo_reports.rv_function,M,,,O,O,O
+diastolic_grade,Echo,Diastolic dysfunction grade,coded,,normal; grade_I; grade_II; grade_III; indeterminate,,,emr_derived,emr.echo_in_window: echo_reports.diastolic_grade,O,,,,O,
+pasp_mmhg,Echo,Pulmonary artery systolic pressure,integer,mmHg,,10,150,emr_derived,emr.echo_in_window: echo_reports.pasp_mmhg,O,,,,O,
+mr_severity,Echo,Mitral regurgitation severity,coded,,none; trivial; mild; moderate; moderate_severe; severe,,,emr_derived,emr.echo_valve: echo_valve_findings mitral regurgitation,M,,,,O,
+nt_probnp,Laboratory,NT-proBNP,numeric,pg/mL,,5,70000,emr_derived,emr.lab_in_window: lab_results NT_PROBNP,M,,O,M,M,O
+haemoglobin,Laboratory,Haemoglobin,numeric,g/dL,,3,22,emr_derived,emr.lab_in_window: lab_results HB,M,,,O,M,O
+creatinine,Laboratory,Serum creatinine,numeric,mg/dL,,0.2,20,emr_derived,emr.lab_in_window: lab_results CREATININE,M,O,M,M,M,M
+egfr,Laboratory,"eGFR (CKD-EPI 2021, race-free)",numeric,mL/min/1.73m2,,2,200,calculated,"calc.egfr_ckd_epi_2021: creatinine, age, sex",M,O,M,M,M,M
+sodium,Laboratory,Serum sodium,numeric,mmol/L,,100,180,emr_derived,emr.lab_in_window: lab_results NA,M,O,M,O,M,O
+potassium,Laboratory,Serum potassium,numeric,mmol/L,,1.5,9,emr_derived,emr.lab_in_window: lab_results K,M,O,M,O,M,O
+has_diabetes,Comorbidities,Diabetes mellitus,boolean,,,,,emr_derived,emr.active_diagnosis: DX_DM,M,,,,O,O
+has_hypertension,Comorbidities,Hypertension,boolean,,,,,emr_derived,emr.active_diagnosis: DX_HTN,M,,,,,
+has_ckd,Comorbidities,Chronic kidney disease (eGFR < 60 or diagnosis),boolean,,,,,emr_derived,emr.active_diagnosis: DX_CKD or eGFR < 60 twice 90 d apart,M,,,,O,O
+has_af,Comorbidities,Atrial fibrillation / flutter,boolean,,,,,emr_derived,emr.active_diagnosis: DX_AF,M,,,,O,O
+has_cad,Comorbidities,Coronary artery disease,boolean,,,,,emr_derived,"emr.active_diagnosis: DX_CAD, DX_MI, DX_ICM",M,,,,,
+has_anaemia,Comorbidities,"Anaemia (Hb < 13 g/dL men, < 12 g/dL women, or diagnosis)",boolean,,,,,calculated,"calc.anaemia_who: haemoglobin, sex",M,,,,O,
+rasi_eligible,Medication (GDMT),ARNI / ACEI / ARB: eligible for this phenotype,boolean,,,,,calculated,calc.gdmt: ref.hf_pillar_eligibility,M,M,M,M,M,M
+rasi_prescribed,Medication (GDMT),ARNI / ACEI / ARB: prescribed,boolean,,,,,calculated,calc.gdmt: registry.compute_gdmt,M,M,M,M,M,M
+rasi_drug,Medication (GDMT),ARNI / ACEI / ARB: drug,text,,,,,calculated,calc.gdmt: ref.drugs.drug_code,C,C,C,C,C,C
+rasi_daily_dose,Medication (GDMT),ARNI / ACEI / ARB: total daily dose,numeric,mg/day,,0,2000,calculated,calc.gdmt: medication_events.daily_dose,C,C,C,C,C,C
+rasi_pct_target,Medication (GDMT),ARNI / ACEI / ARB: % of target daily dose,numeric,%,,0,300,calculated,calc.gdmt: daily dose / ref.hf_target_doses,C,C,C,C,C,C
+rasi_dose_status,Medication (GDMT),ARNI / ACEI / ARB: optimisation status,coded,,at_target; below_target_uptitrating; below_target_max_tolerated; not_prescribed; not_indicated,,,calculated,calc.gdmt + clinician confirmation,M,M,M,M,M,M
+rasi_reasons,Medication (GDMT),ARNI / ACEI / ARB: reasons not prescribed / not at target,multi_coded,,contraindication; intolerance; hypotension; hyperkalaemia; renal_dysfunction; bradycardia; worsening_hf; patient_refusal; financial; drug_unavailable; titration_in_progress; recently_initiated; not_indicated_for_phenotype; other,,,entered,,C,C,C,C,C,C
+bb_eligible,Medication (GDMT),Beta-blocker: eligible for this phenotype,boolean,,,,,calculated,calc.gdmt: ref.hf_pillar_eligibility,M,M,M,M,M,M
+bb_prescribed,Medication (GDMT),Beta-blocker: prescribed,boolean,,,,,calculated,calc.gdmt: registry.compute_gdmt,M,M,M,M,M,M
+bb_drug,Medication (GDMT),Beta-blocker: drug,text,,,,,calculated,calc.gdmt: ref.drugs.drug_code,C,C,C,C,C,C
+bb_daily_dose,Medication (GDMT),Beta-blocker: total daily dose,numeric,mg/day,,0,2000,calculated,calc.gdmt: medication_events.daily_dose,C,C,C,C,C,C
+bb_pct_target,Medication (GDMT),Beta-blocker: % of target daily dose,numeric,%,,0,300,calculated,calc.gdmt: daily dose / ref.hf_target_doses,C,C,C,C,C,C
+bb_dose_status,Medication (GDMT),Beta-blocker: optimisation status,coded,,at_target; below_target_uptitrating; below_target_max_tolerated; not_prescribed; not_indicated,,,calculated,calc.gdmt + clinician confirmation,M,M,M,M,M,M
+bb_reasons,Medication (GDMT),Beta-blocker: reasons not prescribed / not at target,multi_coded,,contraindication; intolerance; hypotension; hyperkalaemia; renal_dysfunction; bradycardia; worsening_hf; patient_refusal; financial; drug_unavailable; titration_in_progress; recently_initiated; not_indicated_for_phenotype; other,,,entered,,C,C,C,C,C,C
+mra_eligible,Medication (GDMT),MRA: eligible for this phenotype,boolean,,,,,calculated,calc.gdmt: ref.hf_pillar_eligibility,M,M,M,M,M,M
+mra_prescribed,Medication (GDMT),MRA: prescribed,boolean,,,,,calculated,calc.gdmt: registry.compute_gdmt,M,M,M,M,M,M
+mra_drug,Medication (GDMT),MRA: drug,text,,,,,calculated,calc.gdmt: ref.drugs.drug_code,C,C,C,C,C,C
+mra_daily_dose,Medication (GDMT),MRA: total daily dose,numeric,mg/day,,0,2000,calculated,calc.gdmt: medication_events.daily_dose,C,C,C,C,C,C
+mra_pct_target,Medication (GDMT),MRA: % of target daily dose,numeric,%,,0,300,calculated,calc.gdmt: daily dose / ref.hf_target_doses,C,C,C,C,C,C
+mra_dose_status,Medication (GDMT),MRA: optimisation status,coded,,at_target; below_target_uptitrating; below_target_max_tolerated; not_prescribed; not_indicated,,,calculated,calc.gdmt + clinician confirmation,M,M,M,M,M,M
+mra_reasons,Medication (GDMT),MRA: reasons not prescribed / not at target,multi_coded,,contraindication; intolerance; hypotension; hyperkalaemia; renal_dysfunction; bradycardia; worsening_hf; patient_refusal; financial; drug_unavailable; titration_in_progress; recently_initiated; not_indicated_for_phenotype; other,,,entered,,C,C,C,C,C,C
+sglt2i_eligible,Medication (GDMT),SGLT2 inhibitor: eligible for this phenotype,boolean,,,,,calculated,calc.gdmt: ref.hf_pillar_eligibility,M,M,M,M,M,M
+sglt2i_prescribed,Medication (GDMT),SGLT2 inhibitor: prescribed,boolean,,,,,calculated,calc.gdmt: registry.compute_gdmt,M,M,M,M,M,M
+sglt2i_drug,Medication (GDMT),SGLT2 inhibitor: drug,text,,,,,calculated,calc.gdmt: ref.drugs.drug_code,C,C,C,C,C,C
+sglt2i_daily_dose,Medication (GDMT),SGLT2 inhibitor: total daily dose,numeric,mg/day,,0,2000,calculated,calc.gdmt: medication_events.daily_dose,C,C,C,C,C,C
+sglt2i_pct_target,Medication (GDMT),SGLT2 inhibitor: % of target daily dose,numeric,%,,0,300,calculated,calc.gdmt: daily dose / ref.hf_target_doses,C,C,C,C,C,C
+sglt2i_dose_status,Medication (GDMT),SGLT2 inhibitor: optimisation status,coded,,at_target; below_target_uptitrating; below_target_max_tolerated; not_prescribed; not_indicated,,,calculated,calc.gdmt + clinician confirmation,M,M,M,M,M,M
+sglt2i_reasons,Medication (GDMT),SGLT2 inhibitor: reasons not prescribed / not at target,multi_coded,,contraindication; intolerance; hypotension; hyperkalaemia; renal_dysfunction; bradycardia; worsening_hf; patient_refusal; financial; drug_unavailable; titration_in_progress; recently_initiated; not_indicated_for_phenotype; other,,,entered,,C,C,C,C,C,C
+gdmt_pillars_prescribed,Medication (GDMT),Number of eligible pillars prescribed,integer,count,,0,4,calculated,calc.gdmt,M,M,M,M,M,M
+gdmt_pillars_at_target,Medication (GDMT),Number of pillars at target dose,integer,count,,0,4,calculated,calc.gdmt,M,M,M,M,M,M
+loop_diuretic_furosemide_eq,Medication (other),"Loop diuretic, furosemide-equivalent daily dose (0 = none)",numeric,mg/day,,0,1000,calculated,calc.loop_diuretic_equivalent: furosemide 40 = torsemide 20 = bumetanide 1,M,M,M,M,M,M
+on_ivabradine,Medication (other),Ivabradine,boolean,,,,,emr_derived,emr.active_drug_class: IVABRADINE,O,O,O,O,O,O
+on_digoxin,Medication (other),Digoxin,boolean,,,,,emr_derived,emr.active_drug_class: DIGOXIN,O,O,O,O,O,O
+devices,Devices,Active cardiac devices,multi_coded,,ICD; CRT_P; CRT_D; PPM; CSP,,,emr_derived,emr.active_devices: cardiac_devices,M,,,O,M,M
+vital_status,Outcomes,Vital status at visit,coded,,alive; dead; unknown,,,entered,,,M,M,M,M,M
+hf_hospitalisations_since_last,Outcomes,HF hospitalisations since previous visit,integer,count,,0,50,calculated,calc.event_count: clinical_events hf_hospitalisation,,M,M,M,M,M
+urgent_hf_visits_since_last,Outcomes,Urgent HF visits since previous visit,integer,count,,0,50,calculated,calc.event_count: clinical_events urgent_hf_visit,,M,M,M,M,M
+worsening_hf_escalation,Outcomes,Worsening HF needing outpatient treatment escalation,boolean,,,,,calculated,calc.event_exists: worsening_hf_outpatient,,M,M,M,M,M
+renal_deterioration,Outcomes,Renal deterioration (creatinine rise >= 0.3 mg/dL or eGFR fall >= 25%),boolean,,,,,calculated,calc.renal_deterioration vs baseline,,O,M,M,M,M
+hyperkalaemia,Outcomes,Hyperkalaemia (K > 5.5 mmol/L) since previous visit,boolean,,,,,calculated,calc.lab_threshold: K > 5.5,,M,M,M,M,M
+symptomatic_hypotension,Outcomes,Symptomatic hypotension since previous visit,boolean,,,,,calculated,calc.event_exists: hypotension,,M,M,M,M,M

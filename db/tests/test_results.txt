@@ -1,0 +1,138 @@
+--- 1. Clinician at centre A documents a heart failure consultation
+PASS  local patient code generated per centre
+PASS  organisation_id filled from centre by trigger
+PASS  BMI generated (72 kg, 170 cm = 24.9)
+PASS  diastolic above systolic rejected [23514: new row for relation "vital_signs" violates check constraint "vital_signs_check"]
+PASS  ischaemic cardiomyopathy suggests HF, lipid and CAD registries (PRD 5)
+PASS  no silent enrolment: suggestion only
+PASS  NT-proBNP 200 pmol/L stored as 1691.4 pg/mL with original value kept
+PASS  LDL-C 3.0 mmol/L stored as 116.01 mg/dL
+PASS  unknown unit rejected [23514: Unknown unit mg% for analyte LDL_C]
+PASS  implausible potassium 45 mmol/L rejected [23514: K = 45 mmol/L is outside plausible range]
+--- 2. Medication history and GDMT engine
+PASS  discontinue event closes the course
+PASS  every carvedilol titration kept as its own event
+PASS  medication events cannot be edited [42501: permission denied for table medication_events]
+PASS  ARNI 49/51 mg BD = 50% of target
+PASS  carvedilol 25 mg BD = 100% of target
+PASS  date of last titration
+PASS  MRA eligible but not prescribed
+PASS  dapagliflozin 10 mg = at target
+PASS  3 of 4 eligible pillars prescribed
+PASS  as of 50 days ago: evidence-based carvedilol 6.25 mg/day (12.5%) preferred over metoprolol tartrate
+PASS  HFpEF: only SGLT2i counted as an eligible pillar
+--- 3. Signed records cannot be silently altered
+PASS  signed encounter text cannot be edited [42501: encounter 12000000-0000-0000-0000-000000000001 is signed; record an amendment instead]
+PASS  vitals cannot be added to a signed encounter [42501: vital_signs belongs to a signed encounter; record an amendment instead]
+PASS  amendment recorded beside the untouched original
+--- 4. Registry enrolment needs eligibility and research consent
+PASS  enrolment without research consent rejected [23514: enrolment requires an active research consent for this protocol]
+PASS  clinical-care consent does not authorise research enrolment [23514: enrolment requires an active research consent for this protocol]
+PASS  enrolment with research consent accepted
+PASS  baseline day 10 is inside the 0 to +14 window
+PASS  registry value outside its defined range (LVEF 140%) rejected [23514: variable lvef value 140 outside 5 to 90]
+PASS  registry code outside allowed values (NYHA V) rejected [23514: variable nyha_class does not allow code V]
+--- 5. Centre isolation
+PASS  centre B clinician sees none of centre A's rows
+PASS  centre B cannot write into centre A [42501: new row violates row-level security policy for table "encounters"]
+PASS  switching active centre to one without a role shows nothing
+PASS  API switching to a role the user does not hold at the centre (assistant) shows nothing
+--- 6. Role permissions
+PASS  assistant sees centre A registrations
+PASS  assistant cannot prescribe or change medication [42501: permission denied for table medication_events]
+PASS  assistant cannot read registry data [42501: permission denied for table enrolments]
+PASS  assistant cannot read research datasets [42501: permission denied for schema research]
+PASS  platform admin has no access to identifiable patient data [42501: permission denied for table patient_registrations]
+PASS  platform admin sees no registry patient rows
+PASS  platform admin manages all centres
+PASS  centre admin cannot grant roles to themselves [42501: new row violates row-level security policy for table "user_centre_roles"]
+PASS  centre admin cannot grant roles in another organisation [42501: new row violates row-level security policy for table "user_centre_roles"]
+PASS  centre admin can grant a role at another centre of the same organisation
+PASS  centre admin cannot create a platform admin [42501: new row violates row-level security policy for table "users"]
+--- 7. Study access is pseudonymised
+PASS  network PI sees the enrolment in the pooled view
+PASS  pseudonymous study code assigned
+PASS  age at index instead of date of birth
+PASS  no identifier columns in any research view
+PASS  PI sees HF assessment and event, with days from index
+PASS  event placed at day 7 after index
+PASS  PI cannot reach identifiable centre records
+PASS  requester cannot approve their own export (four-eyes) [23514: new row for relation "export_jobs" violates check constraint "export_jobs_four_eyes"]
+--- 8. Cross-centre identity linkage without exposing identifiers
+PASS  centre B numbers its own patients
+PASS  match keys are not readable by any app role [42501: permission denied for table patient_match_keys]
+PASS  match found by keyed hashes only: master id + matched key types
+PASS  confirmed link re-points centre B registration and its clinical rows to the shared master patient
+PASS  after linking, centre B still sees only its own encounter, not centre A's
+PASS  orphaned master record marked merged, not deleted
+--- 9. Consent withdrawal
+PASS  withdrawal closes the enrolment
+PASS  clinical record unaffected by research withdrawal
+PASS  withdrawn-with-exclusion patient disappears from research views
+--- 10. Audit trail
+PASS  encounter create, sign and amend all audited
+PASS  audit row names the application user
+PASS  UPDATE audit stores only changed columns
+PASS  hash chain for centre A verifies
+PASS  audit log cannot be updated, even by superuser [42501: UPDATE on audit.audit_log_default is not allowed: table is append-only]
+PASS  audit log cannot be deleted, even by superuser [42501: DELETE on audit.audit_log_default is not allowed: table is append-only]
+PASS  audit log cannot be truncated [42501: audit tables cannot be truncated]
+PASS  tampering by a superuser who disabled triggers is detected by the hash chain
+PASS  clinicians cannot read the audit log [42501: permission denied for table audit_log]
+--- 11. Clinical calculations against hand-computed reference values
+PASS  LDL 160 -> 70 mg/dL = 56.3% reduction
+PASS  no % reduction from a zero baseline
+PASS  Friedewald 200 - 40 - 150/5 = 130
+PASS  Friedewald not computed when TG >= 400
+PASS  atorvastatin 40 mg = high intensity
+PASS  rosuvastatin/ezetimibe 10 mg = moderate-intensity statin
+PASS  very high risk: 50 mg/dL with 56% reduction meets target
+PASS  very high risk: 50 mg/dL with only 40% reduction does not
+PASS  lipid visit without a test cannot be called not-at-target [23514: new row for relation "lipid_assessment_data" violates check constraint "lipid_assessment_data_check1"]
+PASS  HF phenotype by LVEF, incl. HFimpEF (+10 points from <= 40)
+--- 12. Migration 0002: D5 sacubitril/valsartan strengths
+PASS  sacubitril/valsartan strengths 25, 50, 100, 200 mg (labelled total)
+PASS  25 mg BD = 12.5% of the 400 mg/day target
+--- 13. Migration 0002: D8 ESC/EAS and LAI targets side by side
+PASS  lipid protocol names LAI as secondary guideline
+PASS  LAI rule set is draft until verified (active only with an approval date)
+PASS  LDL-C 52 mg/dL, 60% fall: meets ESC/EAS very-high (< 55)
+PASS  same patient misses LAI very-high (< 50)
+PASS  target filled from the rule table, not typed
+PASS  LAI extreme risk B: 30 mg/dL meets the <= 30 goal
+PASS  risk category must exist in that guideline [23503: risk category extreme_b is not defined in this guideline rule set]
+PASS  attainment rows isolated by centre
+PASS  audit chain for centre B still verifies
+--- 14. Migration 0003: CAD data dictionary
+PASS  CAD dictionary has 94 variables
+PASS  every CAD variable is collected by CEMR-CAD v1
+PASS  every CAD visit code exists in the CAD visit schedule
+PASS  PRD 6.5 outcomes are mandatory at every follow-up visit
+PASS  dictionary presentation codes match cad_enrolment_details
+PASS  six oral anticoagulants in the catalogue for on_oac
+--- 15. Migration 0003: error tags the API maps
+PASS  every HINT tag raised by a function is in ref.api_error_map
+PASS  every mapped constraint or index exists
+PASS  HF research consent does not cover CAD enrolment [cemr:CONSENT_REQUIRED: enrolment requires an active research consent for this protocol]
+PASS  CAD baseline on day 5 is inside its 0 to +14 window
+PASS  CAD values saved (stent count, diseased vessels)
+PASS  CAD LVEF 140% rejected [cemr:VALUE_OUT_OF_RANGE: variable lvef value 140 outside 5 to 90]
+PASS  Killip V rejected [cemr:CODE_NOT_ALLOWED: variable killip_class does not allow code V]
+PASS  diseased_vessels takes only LM, LAD, LCX, RCA [cemr:CODE_NOT_ALLOWED: variable diseased_vessels has a code outside its allowed values]
+PASS  2.5 lesions rejected [cemr:WRONG_VALUE_TYPE: variable pci_lesions_treated expects an integer]
+--- 16. Migration 0003: lock and unlock
+PASS  clinician cannot lock [cemr:LOCK_ROLE: role clinician may not lock assessments]
+PASS  partial assessment cannot be locked [cemr:ASSESSMENT_INCOMPLETE: assessment is still partial]
+PASS  assessment with an open query cannot be locked [cemr:OPEN_QUERIES: assessment has open data queries]
+PASS  coordinator locks; locked_by stamped
+PASS  locked values cannot change [cemr:ASSESSMENT_LOCKED: assessment is locked]
+PASS  coordinator cannot unlock [cemr:LOCK_ROLE: role research_coordinator may not unlock assessments]
+PASS  PI unlock without a reason refused [cemr:CHANGE_REASON_REQUIRED: unlocking needs a change reason]
+PASS  PI unlocks with a reason
+PASS  unlock reason is in the audit log
+PASS  centre A chain: only the row test 0001 tampered with fails; every later row verifies
+--- 17. Migration 0004: LAI targets verified
+PASS  LAI 2020 rule set active and approved
+PASS  LAI targets unchanged: six risk categories
+PASS  other rule sets remain draft until verified
+Total: 120 passed, 0 failed (migrations 0001-0004, 2026-11-22)
