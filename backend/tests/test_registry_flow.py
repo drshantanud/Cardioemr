@@ -87,8 +87,10 @@ def test_start_screening_is_idempotent(client, as_user, db_admin):
     r2 = client.post(f"{API}/enrolments", json=body, headers={**as_user("dra"), **key})
     assert r1.status_code == r2.status_code == 201
     assert r1.json()["enrolment_id"] == r2.json()["enrolment_id"]
-    assert db_admin.execute("SELECT count(*) FROM registry.enrolments").fetchone()[0] == 1
-    assert db_admin.execute("SELECT status FROM registry.registry_suggestions").fetchone()[0] == "screening_started"
+    assert db_admin.execute("SELECT count(*) FROM registry.enrolments WHERE patient_id = %s",
+                            (PATIENT,)).fetchone()[0] == 1
+    assert db_admin.execute("SELECT status FROM registry.registry_suggestions WHERE suggestion_id = %s",
+                            (SUGGESTION,)).fetchone()[0] == "screening_started"
     r3 = client.post(f"{API}/enrolments", json={**body, "screening_date": "2026-01-01"},
                      headers={**as_user("dra"), **key})
     assert r3.status_code == 422 and code(r3) == "IDEMPOTENCY_MISMATCH"
@@ -172,7 +174,8 @@ def test_bad_values_all_reported_none_saved(client, as_user, db_admin):
     rules = {e["variable_code"]: e["rule"] for e in r.json()["errors"]}
     assert rules == {"lvef": "VALUE_OUT_OF_RANGE", "nyha_class": "CODE_NOT_ALLOWED",
                      "systolic_bp": "WRONG_VALUE_TYPE", "no_such_variable": "UNKNOWN_VARIABLE"}
-    assert db_admin.execute("SELECT count(*) FROM registry.variable_values").fetchone()[0] == 0
+    assert db_admin.execute("SELECT count(*) FROM registry.variable_values WHERE assessment_id = %s",
+                            (state["assessment"],)).fetchone()[0] == 0
 
 
 def test_save_and_change_values(client, as_user):

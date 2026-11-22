@@ -13,6 +13,7 @@ from psycopg import sql
 
 from ..context import Ctx, Idempotency, etag, require_change_reason, roles
 from ..errors import Problem, from_db_error
+from ..prefill import Chart, NotAutomated, derive
 from .enrolment import _jsonable, _replay, _versioned_update
 
 router = APIRouter(tags=["Assessments"])
@@ -38,7 +39,7 @@ class NewAssessment(Strict):
     contact_mode: Literal["in_person", "telephone", "video", "records_review", "proxy"] = "in_person"
     assessment_date: date
     encounter_id: uuid.UUID | None = None
-    prefill: bool = False   # prefill arrives in the next slice
+    prefill: bool = False   # true: fill chart-derived variables straight away (see POST .../prefill)
 
 
 @router.post("/enrolments/{enrolment_id}/assessments", status_code=201)
@@ -65,6 +66,8 @@ def create_assessment(enrolment_id: uuid.UUID, body: NewAssessment, idempotency_
                   (enrolment_id, e["patient_id"], ctx.centre_id, body.encounter_id, body.visit_code,
                    body.assessment_type, body.contact_mode, body.assessment_date))
     out = _assessment(ctx, row["assessment_id"])
+    if body.prefill:
+        out["prefill"] = run_prefill(ctx, row["assessment_id"])
     idem.store(201, out)
     return JSONResponse(out, status_code=201, headers={"ETag": etag(out["row_version"]),
                                                       "Location": f"/api/v1/assessments/{out['assessment_id']}"})
@@ -107,6 +110,63 @@ def get_assessment(assessment_id: uuid.UUID, response: Response, ctx: Ctx = Depe
     out.update(variables=_jsonable(items), mandatory_missing=missing)
     response.headers["ETag"] = etag(a["row_version"])
     return out
+
+
+@router.post("/assessments/{assessment_id}/prefill")
+def prefill_assessment(assessment_id: uuid.UUID, ctx: Ctx = Depends(STAFF)):
+    return run_prefill(ctx, assessment_id)
+
+
+def run_prefill(ctx: Ctx, assessment_id) -> dict:
+    """Fill every emr_derived and calculated variable of this visit that has no value yet.
+    Never overwrites a stored value; each filled value is unverified and points at its chart row."""
+    a = _assessment_row(ctx, assessment_id)
+    if a["locked_at"] is not None:
+        raise Problem(422, "ASSESSMENT_LOCKED", "Assessment is locked")
+    defs = ctx.all("""
+        SELECT DISTINCT ON (d.variable_id) d.variable_id, d.variable_code, d.data_type, d.unit, d.source_kind,
+               d.derivation_key, d.emr_source, pv.sort_order
+          FROM registry.protocol_variables pv JOIN registry.variable_definitions d USING (variable_id)
+          JOIN registry.enrolments e ON e.protocol_id = pv.protocol_id
+         WHERE e.enrolment_id = %s AND pv.visit_code IN (%s, '*') AND d.source_kind <> 'entered'
+         ORDER BY d.variable_id, pv.sort_order""", (a["enrolment_id"], a["visit_code"]))
+    defs.sort(key=lambda d: (d["sort_order"], d["variable_code"]))
+    existing = {r["variable_id"]: r["source_kind"] for r in ctx.all(
+        "SELECT variable_id, source_kind FROM registry.variable_values WHERE assessment_id = %s", (assessment_id,))}
+    chart = Chart(ctx, a)
+    emap = ctx.request.app.state.error_map
+    filled, skipped = [], []
+    for d in defs:
+        code = d["variable_code"]
+        if d["variable_id"] in existing:
+            skipped.append({"variable_code": code, "reason": "already_entered" if existing[d["variable_id"]] == "entered"
+                            else "already_filled"})
+            continue
+        try:
+            found = derive(chart, d)
+        except NotAutomated:
+            skipped.append({"variable_code": code, "reason": "not_automated_yet"})
+            continue
+        if found is None or found.value is None:
+            skipped.append({"variable_code": code, "reason": "no_source_in_window"})
+            continue
+        column = VALUE_COLUMN[d["data_type"]]
+        value = int(found.value) if d["data_type"] == "integer" else found.value
+        try:
+            with ctx.conn.transaction():
+                row = ctx.one(sql.SQL(
+                    "INSERT INTO registry.variable_values (assessment_id, patient_id, centre_id, variable_id, "
+                    "value_status, source_kind, source_table, source_row_id, {}) "
+                    "VALUES (%s, %s, %s, %s, 'present', %s, %s, %s, %s) RETURNING *").format(sql.Identifier(column)),
+                    (assessment_id, a["patient_id"], ctx.centre_id, d["variable_id"], d["source_kind"],
+                     found.table, found.row_id, value))
+        except psycopg.Error as ex:
+            p = from_db_error(ex, emap)
+            skipped.append({"variable_code": code, "reason": "rejected_by_validation", "detail": p.detail or p.title})
+            continue
+        row.update(variable_code=code, data_type=d["data_type"])
+        filled.append(_value_out(row))
+    return {"filled": filled, "skipped": skipped}
 
 
 class ValueInput(Strict):
