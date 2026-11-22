@@ -9,7 +9,7 @@ from psycopg_pool import ConnectionPool
 from .auth import TokenVerifier
 from .config import Settings, get_settings
 from .errors import ErrorMap, install_handlers
-from .routers import assessments, enrolment, protocols
+from .routers import assessments, enrolment, hf_lipid, pci, protocols
 
 
 def load_error_map(pool: ConnectionPool) -> ErrorMap:
@@ -40,6 +40,6 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
                   openapi_url="/api/v1/openapi.json", docs_url="/api/v1/docs")
     app.state.settings = settings
     install_handlers(app)
-    for r in (protocols.router, enrolment.router, assessments.router):
+    for r in (protocols.router, enrolment.router, assessments.router, hf_lipid.router, pci.router):
         app.include_router(r, prefix="/api/v1")
     return app

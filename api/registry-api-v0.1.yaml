@@ -397,8 +397,10 @@ paths:
       operationId: prefillAssessment
       summary: Fill emr_derived and calculated variables from the chart
       description: |
-        Never overwrites an entered value. Each prefilled value records source_kind, source_table and
-        source_row_id and stays unverified until a person confirms it. Values extracted by AI arrive as
+        Never overwrites a stored value, entered or prefilled. Each prefilled value records source_kind,
+        source_table and source_row_id and stays unverified until a person confirms it. A locked assessment
+        returns 422 ASSESSMENT_LOCKED. Look-back windows from the assessment date: vitals -7..+1 d, height
+        365 d, labs -30..+7 d, echo -90..+7 d, clinical findings from the visit encounter or the last 7 d. Values extracted by AI arrive as
         ai_extracted and always need a person to verify them.
       x-roles: [clinician, research_coordinator, principal_investigator]
       responses:
@@ -417,7 +419,8 @@ paths:
                       type: object
                       properties:
                         variable_code: {type: string}
-                        reason: {type: string, enum: [already_entered, no_source_in_window, locked]}
+                        reason: {type: string, enum: [already_entered, already_filled, no_source_in_window, not_automated_yet, rejected_by_validation]}
+                        detail: {type: string}
         default: {$ref: '#/components/responses/Problem'}
 
   /assessments/{assessmentId}/values:
@@ -551,6 +554,11 @@ paths:
       tags: [Heart failure]
       operationId: saveGdmtReasons
       summary: Store the GDMT snapshot and the reasons a pillar is not at target
+      description: |
+        Stores the engine snapshot in hf_gdmt_status and adds reasons. Reasons are append-only: a request
+        that leaves out a stored reason gets 409. A limiting reason (intolerance, hypotension, hyperkalaemia,
+        renal_dysfunction, bradycardia, contraindication, worsening_hf) turns below_target_uptitrating into
+        below_target_max_tolerated.
       x-roles: [clinician, research_coordinator, principal_investigator]
       requestBody:
         required: true
@@ -592,11 +600,23 @@ paths:
                 required: [items]
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/LipidTargetAttainment'}}
+                  guidelines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_set_code: {type: string}
+                        version: {type: integer}
+                        status: {type: string}
+                        is_primary: {type: boolean}
         default: {$ref: '#/components/responses/Problem'}
     put:
       tags: [Lipid]
       operationId: saveLipidRiskCategories
       summary: Set the risk category under each guideline; targets and attainment are filled by the database
+      description: |
+        LDL-C is the ldl_c value on the form, else the nearest chart result (-30..+7 d); % reduction is from
+        the lipid enrolment baseline. Changing a saved category needs X-Change-Reason (428).
       x-roles: [clinician, research_coordinator, principal_investigator]
       requestBody:
         required: true
@@ -679,6 +699,9 @@ paths:
       tags: [CAD]
       operationId: replacePciProcedure
       summary: Replace the procedure and its lesions and stents (status final needs a change reason)
+      description: |
+        Lesions and stents are matched by lesion_number and sequence_number. Recorded lesions and stents
+        cannot be removed (422); to withdraw a procedure, set status to entered_in_error.
       x-roles: [clinician]
       parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReason'}]
       requestBody:
@@ -1275,9 +1298,14 @@ components:
               target_daily_dose: {type: [number, 'null']}
               pct_of_target: {type: [number, 'null']}
               eligible: {type: boolean}
+              prescribed: {type: boolean}
+              initiation_date: {type: [string, 'null'], format: date}
+              last_titration_date: {type: [string, 'null'], format: date}
               dose_status: {type: string, enum: [at_target, below_target_uptitrating, below_target_max_tolerated, not_prescribed, not_indicated]}
               source: {type: string, enum: [engine, clinician_override]}
               reasons: {type: array, items: {type: string}}
+        stored: {type: boolean, description: true when read from hf_gdmt_status rather than calculated live}
+        pillars_eligible: {type: integer}
         pillars_on_treatment: {type: integer}
         pillars_at_target: {type: integer}
 

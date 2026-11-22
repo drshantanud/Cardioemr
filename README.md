@@ -32,3 +32,20 @@ uvicorn app.main:create_app --factory
 
 Every request carries `Authorization: Bearer <token>`, `X-Centre-Id` and `X-Acting-Role`. The API opens one
 transaction per request, switches to the database role for the acting role, and row-level security does the rest.
+
+### What is implemented
+
+| Area | Endpoints |
+|---|---|
+| Protocols and dictionaries | `/registries`, `/protocols/{id}`, `/protocols/{id}/data-dictionary` |
+| Suggestions and enrolment | `/registry-suggestions`, `/enrolments` (screening, eligibility, enrol, status, schedule) |
+| Assessments | open, read, save values, verify, complete, lock and unlock; `POST /assessments/{id}/prefill` |
+| Heart failure | `GET/PUT /assessments/{id}/hf/gdmt` |
+| Lipid | `GET/PUT /assessments/{id}/lipid/targets` (ESC/EAS 2019 primary, LAI 2020 secondary) |
+| CAD | `/patients/{id}/pci-procedures`, `/pci-procedures/{id}` with lesions and stents |
+
+Prefill (`backend/app/prefill.py`) fills `emr_derived` and `calculated` variables from the chart, using the
+variable's `derivation_key`. It never overwrites a stored value, records the source row, and leaves every
+value unverified. Rules not written yet (events, angiography, devices, adherence and a few others) are
+reported as `not_automated_yet`. Not built yet: events and adjudication, follow-up and missing-data
+reports, exports, unit conversion on entry.
