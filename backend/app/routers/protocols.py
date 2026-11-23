@@ -72,8 +72,9 @@ def get_protocol(protocol_id: uuid.UUID, response: Response, ctx: Ctx = Depends(
 
 
 DICT_COLUMNS = ["variable_code", "definition_version", "category", "variable_label", "description", "data_type",
-                "unit", "allowed_values", "min_value", "max_value", "source_kind", "emr_source", "visit_code",
-                "requirement", "condition_text"]
+                "unit", "accepted_units", "allowed_values", "min_value", "max_value", "source_kind", "emr_source",
+                "visit_code", "requirement", "condition_text"]
+COMPUTED = {"accepted_units": "registry.accepted_units(d.variable_id) AS accepted_units"}
 
 
 @router.get("/protocols/{protocol_id}/data-dictionary")
@@ -81,8 +82,8 @@ def data_dictionary(protocol_id: uuid.UUID, request: Request, visit_code: str | 
                     ctx: Ctx = Depends(CONFIG_READERS)):
     p = _protocol(ctx, protocol_id)
     rows = ctx.all(f"""
-        SELECT {', '.join('d.' + c if c not in ('visit_code', 'requirement', 'condition_text') else 'pv.' + c
-                          for c in DICT_COLUMNS)}
+        SELECT {', '.join(COMPUTED.get(c) or ('d.' + c if c not in ('visit_code', 'requirement', 'condition_text')
+                                              else 'pv.' + c) for c in DICT_COLUMNS)}
           FROM registry.protocol_variables pv JOIN registry.variable_definitions d USING (variable_id)
          WHERE pv.protocol_id = %s AND (%s::text IS NULL OR pv.visit_code IN (%s, '*'))
          ORDER BY pv.sort_order, d.variable_code, pv.visit_code""", (protocol_id, visit_code, visit_code))
@@ -96,6 +97,8 @@ def data_dictionary(protocol_id: uuid.UUID, request: Request, visit_code: str | 
         w.writerow(DICT_COLUMNS)
         for r in rows:
             av = "; ".join(a["code"] for a in r["allowed_values"]) if r["allowed_values"] else ""
-            w.writerow([av if c == "allowed_values" else ("" if r[c] is None else r[c]) for c in DICT_COLUMNS])
+            units = "; ".join(r["accepted_units"] or [])
+            w.writerow([av if c == "allowed_values" else units if c == "accepted_units"
+                        else ("" if r[c] is None else r[c]) for c in DICT_COLUMNS])
         return Response(buf.getvalue(), media_type="text/csv")
     return {"protocol_code": p["protocol_code"], "protocol_version": p["protocol_version"], "items": rows}

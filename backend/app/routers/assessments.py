@@ -27,6 +27,7 @@ ASSESSMENT_COLS = ("assessment_id", "enrolment_id", "visit_code", "assessment_ty
 VALUE_COLUMN = {"numeric": "numeric_value", "integer": "numeric_value", "text": "text_value", "date": "date_value",
                 "boolean": "boolean_value", "coded": "coded_value", "multi_coded": "coded_values"}
 ALL_VALUE_COLUMNS = ("numeric_value", "text_value", "date_value", "boolean_value", "coded_value", "coded_values")
+WRITE_COLUMNS = (*ALL_VALUE_COLUMNS, "entered_value", "entered_unit")
 
 
 class Strict(BaseModel):
@@ -89,7 +90,9 @@ def get_assessment(assessment_id: uuid.UUID, response: Response, ctx: Ctx = Depe
                pv.visit_code, pv.requirement, pv.condition_text,
                v.value_status, v.numeric_value, v.text_value, v.date_value, v.boolean_value, v.coded_value,
                v.coded_values, v.source_kind AS value_source_kind, v.source_table, v.source_row_id,
-               v.verification_status, v.updated_at AS value_updated_at, v.row_version AS value_row_version
+               v.verification_status, v.updated_at AS value_updated_at, v.row_version AS value_row_version,
+               v.entered_value AS value_entered_value, v.entered_unit AS value_entered_unit,
+               registry.accepted_units(d.variable_id) AS accepted_units
           FROM registry.protocol_variables pv
           JOIN registry.enrolments e ON e.protocol_id = pv.protocol_id
           JOIN registry.variable_definitions d USING (variable_id)
@@ -100,7 +103,8 @@ def get_assessment(assessment_id: uuid.UUID, response: Response, ctx: Ctx = Depe
     for r in variables:
         definition = {k: r[k] for k in ("variable_code", "definition_version", "category", "variable_label",
                                         "data_type", "unit", "allowed_values", "min_value", "max_value",
-                                        "source_kind", "emr_source", "visit_code", "requirement", "condition_text")}
+                                        "source_kind", "emr_source", "visit_code", "requirement", "condition_text",
+                                        "accepted_units")}
         value = None if r["value_status"] is None else _value_out(r)
         if value is None and r["requirement"] == "mandatory":
             missing.append(r["variable_code"])
@@ -204,14 +208,18 @@ def save_values(assessment_id: uuid.UUID, body: SaveValues, ctx: Ctx = Depends(S
         if d is None:
             errors.append(_err(v.variable_code, "UNKNOWN_VARIABLE", "Not a variable of this protocol"))
             continue
-        if v.unit is not None and v.unit != d["unit"]:
-            errors.append(_err(v.variable_code, "UNIT", f"Enter in {d['unit']}; unit conversion is not available yet"))
-            continue
         try:
             columns = _value_columns(d["data_type"], v)
         except ValueError as ex:
             errors.append(_err(v.variable_code, "WRONG_VALUE_TYPE", str(ex)))
             continue
+        if v.unit is not None and v.unit != d["unit"]:
+            # Entered in another unit: the database converts it (registry.variable_value_convert)
+            # and keeps the typed value and unit beside the converted one.
+            if "numeric_value" not in columns:
+                errors.append(_err(v.variable_code, "UNIT_NOT_CONVERTIBLE", "Only a numeric value can take a unit"))
+                continue
+            columns = {"entered_value": columns.pop("numeric_value"), "entered_unit": v.unit}
         prior = existing.get(d["variable_id"])
         if prior is not None:
             if v.row_version is None or v.row_version != prior["row_version"]:
@@ -226,17 +234,17 @@ def save_values(assessment_id: uuid.UUID, body: SaveValues, ctx: Ctx = Depends(S
                     row = ctx.one(sql.SQL(
                         "INSERT INTO registry.variable_values (assessment_id, patient_id, centre_id, variable_id, "
                         "value_status, source_kind, {}) VALUES (%s, %s, %s, %s, %s, 'entered', {}) RETURNING *").format(
-                        sql.SQL(", ").join(map(sql.Identifier, ALL_VALUE_COLUMNS)),
-                        sql.SQL(", ").join(sql.Placeholder() * len(ALL_VALUE_COLUMNS))),
+                        sql.SQL(", ").join(map(sql.Identifier, WRITE_COLUMNS)),
+                        sql.SQL(", ").join(sql.Placeholder() * len(WRITE_COLUMNS))),
                         (assessment_id, a["patient_id"], ctx.centre_id, d["variable_id"], v.value_status,
-                         *[columns.get(c) for c in ALL_VALUE_COLUMNS]))
+                         *[columns.get(c) for c in WRITE_COLUMNS]))
                 else:
                     row = ctx.one(sql.SQL(
                         "UPDATE registry.variable_values SET value_status = %s, source_kind = 'entered', "
                         "source_table = NULL, source_row_id = NULL, verification_status = 'unverified', {} "
                         "WHERE value_id = %s RETURNING *").format(
-                        sql.SQL(", ").join(sql.SQL("{} = %s").format(sql.Identifier(c)) for c in ALL_VALUE_COLUMNS)),
-                        (v.value_status, *[columns.get(c) for c in ALL_VALUE_COLUMNS], prior["value_id"]))
+                        sql.SQL(", ").join(sql.SQL("{} = %s").format(sql.Identifier(c)) for c in WRITE_COLUMNS)),
+                        (v.value_status, *[columns.get(c) for c in WRITE_COLUMNS], prior["value_id"]))
                 row["variable_code"] = v.variable_code
                 saved.append(row)
         except psycopg.Error as ex:
@@ -382,5 +390,7 @@ def _value_out(r: dict) -> dict:
         "variable_code": r.get("variable_code"), "value_status": r.get("value_status"), "value": value,
         "source_kind": r.get("value_source_kind", r.get("source_kind")), "source_table": r.get("source_table"),
         "source_row_id": r.get("source_row_id"), "verification_status": r.get("verification_status"),
+        "entered_value": r.get("value_entered_value", r.get("entered_value")),
+        "entered_unit": r.get("value_entered_unit", r.get("entered_unit")),
         "updated_at": r.get("value_updated_at", r.get("updated_at")),
         "row_version": r.get("value_row_version", r.get("row_version"))})

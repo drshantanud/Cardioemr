@@ -140,3 +140,44 @@ SELECT e.course::uuid, '10000000-0000-0000-0000-000000000002','00000000-0000-000
        e(course, kind, eff, dose, freq, reason)
   JOIN clinical.medication_courses c ON c.course_id = e.course::uuid;
 SELECT set_config('app.centre_id', '', false), set_config('app.user_id', '', false);
+
+-- Patient 3 at Pune (migration 0006 tests): enrolled in HF and CAD 200 days ago, with a CAD baseline
+-- visit that still misses mandatory values.  Born 1931, so over 89 at index (export age top-coding).
+SELECT set_config('app.centre_id', '00000000-0000-0000-0000-00000000c0a1', false),
+       set_config('app.user_id', '00000000-0000-0000-0000-0000000000d1', false);
+INSERT INTO clinical.patients (patient_id) VALUES ('10000000-0000-0000-0000-000000000003');
+INSERT INTO clinical.patient_registrations (registration_id, patient_id, centre_id, local_patient_code, first_name,
+  last_name, date_of_birth, sex, mobile)
+VALUES ('11000000-0000-0000-0000-000000000003','10000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-00000000c0a1','PUN1-000003','Vasant','Joshi','1931-05-20','male','9822000003');
+INSERT INTO clinical.patient_consents (consent_id, patient_id, centre_id, consent_type, protocol_id, consent_form_version,
+  consent_date, consent_method)
+SELECT c.id::uuid, '10000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-00000000c0a1',
+  'research_registry', p.protocol_id, 'ICF v1.0', current_date - 205, 'written'
+  FROM (VALUES ('15000000-0000-0000-0000-000000000032','CEMR-HF'), ('15000000-0000-0000-0000-000000000034','CEMR-CAD')) c(id, code)
+  JOIN registry.registry_protocols p ON p.protocol_code = c.code;
+INSERT INTO registry.enrolments (enrolment_id, patient_id, centre_id, registry_type_id, protocol_id, screening_date,
+  enrolment_date, index_date, eligibility_status, eligibility_confirmed_by, eligibility_confirmed_at, consent_id,
+  enrolment_status, enrolled_by)
+SELECT e.id::uuid, '10000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-00000000c0a1', p.registry_type_id,
+  p.protocol_id, current_date - 205, current_date - 200, current_date - 200, 'eligible',
+  '00000000-0000-0000-0000-0000000000d1', now(), e.consent::uuid, 'enrolled', '00000000-0000-0000-0000-0000000000d1'
+  FROM (VALUES ('1b000000-0000-0000-0000-000000000032','CEMR-HF','15000000-0000-0000-0000-000000000032'),
+               ('1b000000-0000-0000-0000-000000000034','CEMR-CAD','15000000-0000-0000-0000-000000000034')) e(id, code, consent)
+  JOIN registry.registry_protocols p ON p.protocol_code = e.code;
+INSERT INTO registry.cad_enrolment_details (enrolment_id, patient_id, centre_id, presentation, categories, index_event_date)
+VALUES ('1b000000-0000-0000-0000-000000000034','10000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-00000000c0a1','NSTEMI', ARRAY['acute_coronary_syndrome','NSTEMI'], current_date - 200);
+INSERT INTO registry.assessments (assessment_id, enrolment_id, patient_id, centre_id, visit_code, assessment_type,
+  assessment_date)
+VALUES ('1c000000-0000-0000-0000-000000000034','1b000000-0000-0000-0000-000000000034',
+  '10000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-00000000c0a1','BL','baseline', current_date - 198);
+SELECT set_config('app.centre_id', '', false), set_config('app.user_id', '', false);
+
+-- Study access for exports: the coordinator requests, the PI approves.
+INSERT INTO registry.study_memberships (user_id, protocol_id, study_role, approved_by, can_export)
+SELECT u.id::uuid, p.protocol_id, u.role, '00000000-0000-0000-0000-0000000000d4', true
+  FROM registry.registry_protocols p,
+       (VALUES ('00000000-0000-0000-0000-0000000000d4','chief_investigator'),
+               ('00000000-0000-0000-0000-0000000000d7','data_manager')) u(id, role)
+ WHERE p.protocol_code IN ('CEMR-HF','CEMR-CAD');

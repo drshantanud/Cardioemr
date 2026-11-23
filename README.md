@@ -43,9 +43,41 @@ transaction per request, switches to the database role for the acting role, and 
 | Heart failure | `GET/PUT /assessments/{id}/hf/gdmt` |
 | Lipid | `GET/PUT /assessments/{id}/lipid/targets` (ESC/EAS 2019 primary, LAI 2020 secondary) |
 | CAD | `/patients/{id}/pci-procedures`, `/pci-procedures/{id}` with lesions and stents |
+| Events | `POST /events`, `GET/PUT /events/{id}`, `GET /patients/{id}/events`, `PUT /events/{id}/adjudications/{id}`, `GET /protocols/{id}/adjudication-queue` |
+| Reports | `GET /protocols/{id}/follow-up-due`, `GET /protocols/{id}/missing-data` |
+| Exports | `POST/GET /exports`, `GET /exports/{id}`, `POST /exports/{id}/decision`, `GET /exports/{id}/file` |
 
 Prefill (`backend/app/prefill.py`) fills `emr_derived` and `calculated` variables from the chart, using the
 variable's `derivation_key`. It never overwrites a stored value, records the source row, and leaves every
-value unverified. Rules not written yet (events, angiography, devices, adherence and a few others) are
-reported as `not_automated_yet`. Not built yet: events and adjudication, follow-up and missing-data
-reports, exports, unit conversion on entry.
+value unverified. Rules not written yet (angiography, devices, adherence, target lesion and vessel
+revascularisation, and a few others) are reported as `not_automated_yet`.
+
+### Events and adjudication (migration 0006)
+
+An event is reported once. The database opens a pending adjudication for every protocol the patient is
+enrolled in at that centre whose component endpoints use the event type and need adjudication. Decisions are
+human: a clinician or PI who did not report the event, with a classification from the endpoint's
+classification system (`ref.adjudication_classifications`). Changing a decision needs a change reason;
+changing the facts of an adjudicated event sends it back to pending; entering the event in error withdraws its
+adjudications. `registry.v_endpoint_events` and `research.v_time_to_first_event` count only confirmed events.
+Every endpoint definition stays `draft` until the clinical lead signs it off.
+
+### Unit conversion
+
+A numeric value may be saved in any unit listed in the variable's `accepted_units` (data dictionary). The
+database converts it to the variable's unit (lab factors from `ref.unit_conversions`, physical units from
+`ref.quantity_units`), range-checks the converted value, and keeps the typed value and unit.
+
+### Research exports
+
+Requested by a research coordinator or PI with export rights, approved by a different PI. After the decision
+commits the export runs as the requester, with their own study access, from the pseudonymised research views
+only: subject codes, days from index, ages above 89 written as 90, date variables as days or years.
+`aggregate_only` writes counts and summaries with cells under 5 shown as `<5`. Files are zips of CSV tables
+(csv, r_csv, stata_csv, spss_csv with a labels.sps) or one xlsx, with the data dictionary and a manifest.
+
+| Variable | Meaning |
+|---|---|
+| `CEMR_EXPORT_DIR` | Where finished export files are kept (required for exports) |
+| `CEMR_EXPORT_URL_KEY` | Key that signs 15-minute download links (random per start-up if unset) |
+| `CEMR_EXPORT_RETENTION_DAYS` | Days a finished export can be downloaded (default 7) |

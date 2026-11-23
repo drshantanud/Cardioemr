@@ -250,16 +250,24 @@ def schedule(ctx: Ctx, enrolment_id: uuid.UUID, through: date | None = None, tod
     facts = ctx.one("SELECT registry.schedule_facts(%s) AS f", (enrolment_id,))["f"]
     if facts is None:
         raise Problem(404, "NOT_FOUND", "Enrolment not found")
-    if facts["index_date"] is None:
+    return build_schedule(facts["index_date"], facts["visits"], facts["assessments"], through, today)
+
+
+def build_schedule(index_date: str | date | None, visits: list[dict], assessments: list[dict],
+                   through: date | None = None, today: date | None = None) -> list[dict]:
+    """Expected visits with their windows and status, from the protocol's visit schedule and the
+    baseline/scheduled assessments already opened (matched in date order per visit code)."""
+    if index_date is None:
         return []
-    index_date = date.fromisoformat(facts["index_date"])
+    if isinstance(index_date, str):
+        index_date = date.fromisoformat(index_date)
     today = today or date.today()
     through = through or index_date + timedelta(days=5 * 365)
     done: dict[str, list] = {}
-    for a in facts["assessments"]:
+    for a in assessments:
         done.setdefault(a["visit_code"], []).append(a)
     out = []
-    for v in facts["visits"]:
+    for v in visits:
         n, day = 1, v["target_day"]
         taken = list(done.get(v["visit_code"], []))
         while True:
