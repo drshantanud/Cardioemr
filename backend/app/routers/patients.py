@@ -237,11 +237,11 @@ def _overview(ctx: Ctx, patient_id: uuid.UUID) -> dict:
     """What the patient header and overview show, limited to what the acting role may read."""
     consents = ctx.all(
         "SELECT c.consent_id, c.consent_type, c.consent_status, c.consent_date, c.consent_form_version, "
-        "c.withdrawal_date, p.protocol_code FROM clinical.patient_consents c "
+        "c.withdrawal_date, c.protocol_id, c.row_version, p.protocol_code FROM clinical.patient_consents c "
         "LEFT JOIN registry.registry_protocols p USING (protocol_id) WHERE c.patient_id = %s "
         "ORDER BY c.consent_date DESC, c.created_at DESC", (patient_id,)) if ctx.role in REGISTRY_READERS else ctx.all(
         "SELECT consent_id, consent_type, consent_status, consent_date, consent_form_version, withdrawal_date, "
-        "NULL::text AS protocol_code FROM clinical.patient_consents WHERE patient_id = %s "
+        "protocol_id, row_version, NULL::text AS protocol_code FROM clinical.patient_consents WHERE patient_id = %s "
         "ORDER BY consent_date DESC, created_at DESC", (patient_id,))
     allergies = ctx.all(
         "SELECT allergy_id, allergen_type, allergen_text, reaction, severity FROM clinical.allergies "
@@ -255,7 +255,7 @@ def _overview(ctx: Ctx, patient_id: uuid.UUID) -> dict:
            "enrolments": None, "registry_suggestions": None}
     if ctx.role in REGISTRY_READERS:
         out["enrolments"] = ctx.all(
-            "SELECT e.enrolment_id, t.registry_code, t.registry_name, p.protocol_code, e.enrolment_status, "
+            "SELECT e.enrolment_id, e.protocol_id, t.registry_code, t.registry_name, p.protocol_code, e.enrolment_status, "
             "e.eligibility_status, e.screening_date, e.enrolment_date, e.index_date FROM registry.enrolments e "
             "JOIN registry.registry_types t USING (registry_type_id) "
             "JOIN registry.registry_protocols p USING (protocol_id) "

@@ -73,6 +73,8 @@ export interface Consent {
   consent_form_version: string;
   withdrawal_date: string | null;
   protocol_code: string | null;
+  protocol_id?: string | null;
+  row_version?: number;
 }
 
 export interface Allergy {
@@ -94,6 +96,7 @@ export interface EncounterHeader {
 
 export interface EnrolmentHeader {
   enrolment_id: string;
+  protocol_id: string;
   registry_code: string;
   registry_name: string;
   protocol_code: string;
@@ -345,4 +348,180 @@ export interface ClinicalSummary {
     diastolic_grade: string | null; pasp_mmhg: number | null; interpretation: string | null; verification_status: string } | null;
   latest_ecg: { performed_on: string; rhythm: string | null; heart_rate: number | null; qrs_ms: number | null;
     qtc_ms: number | null; qrs_morphology: string | null; interpretation: string | null; verification_status: string } | null;
+}
+
+// ---- registries ------------------------------------------------------------
+
+export interface ProtocolSummary {
+  protocol_id: string;
+  protocol_code: string;
+  protocol_version: string;
+  status: string;
+  site_status: string | null;
+}
+
+export interface Registry {
+  registry_code: string;
+  registry_name: string;
+  protocols: ProtocolSummary[];
+}
+
+export interface Visit {
+  visit_code: string;
+  visit_label: string;
+  target_day: number;
+  window_before_days: number;
+  window_after_days: number;
+  repeats_every_days: number | null;
+}
+
+export interface Protocol {
+  protocol_id: string;
+  protocol_code: string;
+  protocol_version: string;
+  registry_code: string;
+  title: string;
+  status: string;
+  requires_research_consent: boolean;
+  inclusion_text: string;
+  exclusion_text: string | null;
+  inclusion_rules: { code: string; label: string }[];
+  exclusion_rules: { code: string; label: string }[];
+  visits: Visit[];
+  rule_sets: { rule_kind: string; rule_set_code: string; version: string; status: string; role: string }[];
+}
+
+export interface ScheduleItem {
+  visit_code: string;
+  occurrence: number;
+  target_date: string;
+  window_opens: string;
+  window_closes: string;
+  status: "done" | "due" | "overdue" | "not_due" | "missed" | "not_applicable";
+  assessment_id: string | null;
+}
+
+export interface Enrolment {
+  enrolment_id: string;
+  patient_id: string;
+  protocol_id: string;
+  registry_code: "HF" | "LIPID" | "CAD";
+  screening_date: string;
+  enrolment_date: string | null;
+  index_date: string | null;
+  eligibility_status: string;
+  consent_id: string | null;
+  enrolment_status: string;
+  status_changed_on: string | null;
+  row_version: number;
+  study_subject_code: string | null;
+  details: Record<string, unknown> | null;
+  schedule?: ScheduleItem[];
+}
+
+export interface AssessmentHeader {
+  assessment_id: string;
+  enrolment_id: string;
+  visit_code: string;
+  assessment_type: string;
+  contact_mode: string;
+  assessment_date: string;
+  days_from_index: number | null;
+  within_window: boolean | null;
+  completion_status: string;
+  missed_reason: string | null;
+  locked_at: string | null;
+  row_version: number;
+}
+
+export type DataType = "numeric" | "integer" | "text" | "date" | "boolean" | "coded" | "multi_coded";
+
+export interface VariableDefinition {
+  variable_code: string;
+  definition_version: number;
+  category: string;
+  variable_label: string;
+  data_type: DataType;
+  unit: string | null;
+  allowed_values: { code: string; label: string }[] | null;
+  min_value: number | null;
+  max_value: number | null;
+  source_kind: "entered" | "emr_derived" | "calculated";
+  emr_source: string | null;
+  visit_code: string;
+  requirement: "mandatory" | "conditional" | "optional";
+  condition_text: string | null;
+  accepted_units: string[] | null;
+}
+
+export type ValueStatus = "present" | "not_done" | "unknown" | "not_applicable" | "declined";
+
+export interface VariableValue {
+  variable_code: string;
+  value_status: ValueStatus;
+  value: number | string | boolean | string[] | null;
+  source_kind: string;
+  source_table: string | null;
+  source_row_id: string | null;
+  verification_status: "unverified" | "verified" | "queried";
+  entered_value: number | null;
+  entered_unit: string | null;
+  updated_at: string | null;
+  row_version: number;
+}
+
+export interface Assessment extends AssessmentHeader {
+  variables: { definition: VariableDefinition; value: VariableValue | null }[];
+  mandatory_missing: string[];
+}
+
+export interface PrefillResult {
+  filled: VariableValue[];
+  skipped: { variable_code: string; reason: string; detail?: string }[];
+}
+
+export interface GdmtPillar {
+  pillar: "RASI" | "BB" | "MRA" | "SGLT2I";
+  drug_code: string | null;
+  daily_dose: number | null;
+  target_daily_dose: number | null;
+  pct_of_target: number | null;
+  eligible: boolean;
+  prescribed: boolean;
+  dose_status: string;
+  source: string;
+  reasons: string[];
+  initiation_date: string | null;
+  last_titration_date: string | null;
+}
+
+export interface Gdmt {
+  as_of: string;
+  rule_set: string;
+  rule_set_status: string;
+  hf_phenotype: string;
+  stored: boolean;
+  pillars: GdmtPillar[];
+  pillars_eligible: number;
+  pillars_on_treatment: number;
+  pillars_at_target: number;
+}
+
+export interface LipidTargetRow {
+  guideline: string;
+  rule_set_code: string;
+  rule_set_status: string;
+  is_primary: boolean;
+  risk_category: string;
+  ldl_target_mg_dl: number;
+  ldl_mg_dl: number | null;
+  ldl_pct_reduction: number | null;
+  target_met: boolean | null;
+  row_version: number;
+}
+
+export interface LipidTargets {
+  items: LipidTargetRow[];
+  guidelines: { rule_set_code: string; version: string; status: string; is_primary: boolean;
+    categories: { risk_category: string; ldl_target_mg_dl: number; target_operator: string; min_pct_reduction: number | null }[] }[];
 }

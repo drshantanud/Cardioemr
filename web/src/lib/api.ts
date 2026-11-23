@@ -5,6 +5,7 @@ import { API_BASE } from "./config";
 
 export interface FieldError {
   field?: string;
+  variable_code?: string;
   rule?: string;
   message?: string;
 }

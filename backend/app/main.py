@@ -9,7 +9,7 @@ from psycopg_pool import ConnectionPool
 from .auth import TokenVerifier
 from .config import Settings, get_settings
 from .errors import ErrorMap, install_handlers
-from .routers import (assessments, consultations, enrolment, events, exports, hf_lipid, me, medications, patients, pci,
+from .routers import (assessments, consents, consultations, enrolment, events, exports, hf_lipid, me, medications, patients, pci,
                       protocols, reports)
 
 
@@ -41,7 +41,7 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
                   openapi_url="/api/v1/openapi.json", docs_url="/api/v1/docs")
     app.state.settings = settings
     install_handlers(app)
-    for r in (me.router, patients.router, consultations.router, medications.router, protocols.router, enrolment.router, assessments.router, hf_lipid.router, pci.router, events.router,
+    for r in (me.router, patients.router, consents.router, consultations.router, medications.router, protocols.router, enrolment.router, assessments.router, hf_lipid.router, pci.router, events.router,
               reports.router, exports.router):
         app.include_router(r, prefix="/api/v1")
     return app

@@ -201,9 +201,17 @@ def _attainment_rows(ctx: Ctx, assessment_id) -> list[dict]:
 @router.get("/assessments/{assessment_id}/lipid/targets", tags=["Lipid"])
 def get_lipid_targets(assessment_id: uuid.UUID, ctx: Ctx = Depends(STAFF)):
     a = _assessment(ctx, assessment_id)
+    guides = _guidelines(ctx, a)
+    cats: dict = {}
+    for r in ctx.all("SELECT rule_set_id, risk_category, ldl_target_mg_dl, target_operator, min_pct_reduction "
+                     "FROM ref.ldl_target_rules WHERE rule_set_id = ANY(%s) ORDER BY ldl_target_mg_dl",
+                     ([g["rule_set_id"] for g in guides.values()],)):
+        cats.setdefault(r["rule_set_id"], []).append({k: r[k] for k in ("risk_category", "ldl_target_mg_dl",
+                                                                       "target_operator", "min_pct_reduction")})
     return {"items": _attainment_rows(ctx, assessment_id),
-            "guidelines": [{"rule_set_code": k, "version": v["version"], "status": v["status"],
-                            "is_primary": v["is_primary"]} for k, v in _guidelines(ctx, a).items()]}
+            "guidelines": _jsonable([{"rule_set_code": k, "version": v["version"], "status": v["status"],
+                                      "is_primary": v["is_primary"], "categories": cats.get(v["rule_set_id"], [])}
+                                     for k, v in guides.items()])}
 
 
 class RiskCategory(Strict):

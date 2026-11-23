@@ -150,6 +150,9 @@ def test_lipid_targets_under_both_guidelines(client, as_user):
     assert r.json()["items"] == []
     assert {g["rule_set_code"]: g["is_primary"] for g in r.json()["guidelines"]} == {"ESC_EAS_2019": True,
                                                                                     "LAI_2020": False}
+    esc_cats = {c["risk_category"]: c["ldl_target_mg_dl"] for c in r.json()["guidelines"][0]["categories"]
+                } if r.json()["guidelines"][0]["rule_set_code"] == "ESC_EAS_2019" else {}
+    assert esc_cats.get("very_high") == 55 and esc_cats.get("extreme") == 40
     body = {"categories": [{"rule_set_code": "ESC_EAS_2019", "risk_category": "very_high"},
                            {"rule_set_code": "LAI_2020", "risk_category": "extreme_a"}]}
     r = client.put(url, json=body, headers=as_user("dra"))
