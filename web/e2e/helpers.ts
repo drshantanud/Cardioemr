@@ -20,3 +20,18 @@ export function uniqueMobile(): string {
 export function uniqueSurname(): string {
   return "Patil" + Array.from({ length: 5 }, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join("");
 }
+
+/** Registers a fresh patient through the form and leaves the page on their overview. */
+export async function registerPatient(page: Page, first = "Sunil"): Promise<string> {
+  const surname = uniqueSurname();
+  await page.goto("/patients/new");
+  await page.getByLabel("First name").fill(first);
+  await page.getByLabel("Last name").fill(surname);
+  await page.getByRole("button", { name: "Age only" }).click();
+  await page.getByLabel("Age in years").fill("61");
+  await page.getByLabel("Sex").selectOption("male");
+  await page.getByLabel("Mobile", { exact: true }).fill(uniqueMobile());
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("heading", { name: `${first} ${surname}` })).toBeVisible();
+  return `${first} ${surname}`;
+}

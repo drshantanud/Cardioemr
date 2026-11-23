@@ -77,7 +77,8 @@ def test_protocol_and_dictionary(client, as_user):
 
 def test_nurse_sees_suggestion(client, as_user):
     r = client.get(f"{API}/registry-suggestions", headers=as_user("nua"))
-    assert [s["suggestion_id"] for s in r.json()["items"]] == [SUGGESTION]
+    # Other test files add patients with their own suggestions; this patient has exactly the fixture one.
+    assert [s["suggestion_id"] for s in r.json()["items"] if s["patient_id"] == PATIENT] == [SUGGESTION]
 
 
 def test_start_screening_is_idempotent(client, as_user, db_admin):

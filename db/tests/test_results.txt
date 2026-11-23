@@ -191,4 +191,12 @@ PASS  memberships: platform admin with no centre role returns one row with no ce
 PASS  memberships: the login role itself cannot call it [42501: permission denied for schema app]
 PASS  generated local code skips a code already typed by hand
 PASS  duplicate local code maps to a 409
-Total: 172 passed, 0 failed (migrations 0001-0007, 2026-11-23)
+--- 20. Migration 0008: consultation support
+PASS  common outpatient drugs are in the catalogue
+PASS  atenolol and propranolol are not evidence-based HF beta-blockers
+PASS  every drug has a class
+PASS  a complaint can be removed from a draft
+PASS  complaints of a signed consultation cannot be removed [42501: encounter_complaints belongs to a signed encounter; record an amendment instead]
+PASS  assistants cannot remove complaints [42501: permission denied for table encounter_complaints]
+PASS  signed-encounter error is mapped
+Total: 179 passed, 0 failed (migrations 0001-0008, 2026-11-23)

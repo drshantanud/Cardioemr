@@ -26,13 +26,23 @@ export function roleLabel(role: string): string {
 const FRONT_DESK: Role[] = ["assistant", "nurse", "clinician", "research_coordinator", "principal_investigator"];
 const REGISTRY: Role[] = ["clinician", "research_coordinator", "principal_investigator"];
 
-export type Capability = "patients.read" | "patients.register" | "patients.edit" | "registry.read";
+export type Capability =
+  | "patients.read" | "patients.register" | "patients.edit" | "registry.read"
+  | "consult.start" | "consult.edit" | "consult.sign" | "meds.prescribe" | "vitals.record" | "diagnosis.write"
+  | "allergy.write";
 
 const CAPABILITIES: Record<Capability, Role[]> = {
   "patients.read": FRONT_DESK,
   "patients.register": FRONT_DESK,
   "patients.edit": FRONT_DESK,
   "registry.read": REGISTRY,
+  "consult.start": ["clinician"],
+  "consult.edit": ["clinician", "nurse"],
+  "consult.sign": ["clinician"],
+  "meds.prescribe": ["clinician"],
+  "vitals.record": ["assistant", "nurse", "clinician"],
+  "diagnosis.write": ["clinician", "nurse"],
+  "allergy.write": ["assistant", "nurse", "clinician"],
 };
 
 export function can(role: string | undefined, capability: Capability): boolean {
