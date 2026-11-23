@@ -23,6 +23,8 @@ security:
 tags:
   - name: Session
   - name: Patients
+  - name: Consultations
+  - name: Medicines
   - name: Protocols
   - name: Suggestions
   - name: Enrolment
@@ -136,6 +138,348 @@ paths:
           description: Updated
           headers: {ETag: {$ref: '#/components/headers/ETag'}}
           content: {application/json: {schema: {$ref: '#/components/schemas/Patient'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/encounters:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: listEncounters
+      summary: Consultations for the patient at this centre, newest first
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}]
+      responses:
+        '200':
+          description: Consultations
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Consultations]
+      operationId: startEncounter
+      summary: Start a draft consultation, written by the signed-in clinician
+      x-roles: [clinician]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewEncounter'}}}
+      responses:
+        '201':
+          description: Draft started
+          headers: {ETag: {$ref: '#/components/headers/ETag'}, Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Encounter'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /encounters/{encounterId}:
+    parameters: [{$ref: '#/components/parameters/EncounterId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: getEncounter
+      summary: Note, complaints, assessment, vitals, diagnoses, medicine changes and amendments
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Consultation
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Encounter'}}}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Consultations]
+      operationId: saveEncounter
+      summary: Save a draft; complaints and assessment are replaced when given
+      description: 409 ENCOUNTER_SIGNED once the consultation is signed; record an amendment instead.
+      x-roles: [clinician, nurse]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SaveEncounter'}}}
+      responses:
+        '200':
+          description: Saved
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Encounter'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /encounters/{encounterId}/sign:
+    parameters: [{$ref: '#/components/parameters/EncounterId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Consultations]
+      operationId: signEncounter
+      summary: Sign and lock the note (422 when it has nothing in it)
+      x-roles: [clinician]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      responses:
+        '200':
+          description: Signed
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Encounter'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /encounters/{encounterId}/amendments:
+    parameters: [{$ref: '#/components/parameters/EncounterId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Consultations]
+      operationId: amendEncounter
+      summary: Amend one field of a signed note; the earlier text is kept
+      x-roles: [clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/EncounterAmendment'}}}
+      responses:
+        '201':
+          description: Amended
+          content: {application/json: {schema: {$ref: '#/components/schemas/Encounter'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/vitals:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: listVitals
+      summary: Vitals, newest first
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 10}}]
+      responses:
+        '200':
+          description: Vitals
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Consultations]
+      operationId: recordVitals
+      summary: Record vitals, optionally into a draft consultation; BMI is derived
+      x-roles: [assistant, nurse, clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewVitals'}}}
+      responses:
+        '201':
+          description: Recorded
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/diagnoses:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: listDiagnoses
+      summary: Problem list
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Diagnoses
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Consultations]
+      operationId: addDiagnosis
+      summary: Add a diagnosis; returns any registry suggestions it raised
+      description: A diagnosis typed as text needs an ICD-10 code unless it is a working diagnosis.
+      x-roles: [clinician, nurse]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewDiagnosis'}}}
+      responses:
+        '201':
+          description: Added; new_registry_suggestions lists suggestions created by this diagnosis
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /diagnoses/{diagnosisId}:
+    parameters:
+      - {name: diagnosisId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    patch:
+      tags: [Consultations]
+      operationId: updateDiagnosis
+      summary: Change role, certainty or status (resolve, entered in error)
+      x-roles: [clinician, nurse]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosisUpdate'}}}
+      responses:
+        '200':
+          description: Updated
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/allergies:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Consultations]
+      operationId: addAllergy
+      summary: Record an allergy; a drug named exactly is linked to the catalogue so prescribing checks it
+      x-roles: [assistant, nurse, clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewAllergy'}}}
+      responses:
+        '201':
+          description: Recorded
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /allergies/{allergyId}:
+    parameters:
+      - {name: allergyId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    patch:
+      tags: [Consultations]
+      operationId: updateAllergy
+      summary: Mark an allergy inactive or entered in error
+      x-roles: [assistant, nurse, clinician]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AllergyUpdate'}}}
+      responses:
+        '200':
+          description: Updated
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /concepts:
+    parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: listConcepts
+      summary: Pick lists for complaints, diagnoses and medicine-change reasons
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{name: domain, in: query, required: true, schema: {type: string, enum: [complaint, diagnosis, reason]}}]
+      responses:
+        '200':
+          description: Concepts
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/clinical-summary:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Consultations]
+      operationId: getClinicalSummary
+      summary: What sits beside a consultation, from records at this centre only
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_signed_encounter: {type: [object, 'null']}
+                  medications: {type: array, items: {$ref: '#/components/schemas/MedicationCourse'}}
+                  diagnoses: {type: array, items: {type: object}}
+                  allergies: {type: array, items: {type: object}}
+                  latest_vitals: {type: [object, 'null']}
+                  latest_labs: {type: array, items: {type: object}, description: Latest value per summary analyte}
+                  latest_echo: {type: [object, 'null']}
+                  latest_ecg: {type: [object, 'null']}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /drugs:
+    parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Medicines]
+      operationId: searchDrugs
+      summary: Search the drug catalogue by generic or brand name, with products and classes
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 60}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: Drugs
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/medications:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Medicines]
+      operationId: listMedications
+      summary: Medicine courses with their current dose
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{name: include_stopped, in: query, schema: {type: boolean, default: false}}]
+      responses:
+        '200':
+          description: Courses
+          content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/MedicationCourse'}}}}}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Medicines]
+      operationId: startMedication
+      summary: Start a medicine, or record one prescribed elsewhere; the daily dose is computed
+      description: 409 ALREADY_PRESCRIBED when the drug is already active or on hold; 409 ALLERGY when an active
+        allergy names the drug or one of its classes.
+      x-roles: [clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewMedication'}}}
+      responses:
+        '201':
+          description: Started
+          content: {application/json: {schema: {$ref: '#/components/schemas/MedicationCourse'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /medication-courses/{courseId}:
+    parameters:
+      - {name: courseId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    get:
+      tags: [Medicines]
+      operationId: getMedicationCourse
+      summary: One course with every event
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Course
+          content: {application/json: {schema: {$ref: '#/components/schemas/MedicationCourse'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /medication-courses/{courseId}/events:
+    parameters:
+      - {name: courseId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    post:
+      tags: [Medicines]
+      operationId: addMedicationEvent
+      summary: Change dose (classified as increase, decrease, frequency or product change), hold, resume, stop or continue
+      x-roles: [clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MedicationCourseEvent'}}}
+      responses:
+        '201':
+          description: Recorded
+          content: {application/json: {schema: {$ref: '#/components/schemas/MedicationCourse'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /medication-events/{eventId}/void:
+    parameters:
+      - {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    post:
+      tags: [Medicines]
+      operationId: voidMedicationEvent
+      summary: Void an event entered in error; the course status is recomputed and the entry is kept
+      x-roles: [clinician]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VoidMedicationEvent'}}}
+      responses:
+        '201':
+          description: Voided
+          content: {application/json: {schema: {$ref: '#/components/schemas/MedicationCourse'}}}
         default: {$ref: '#/components/responses/Problem'}
 
   /registries:
@@ -1214,6 +1558,11 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    EncounterId:
+      name: encounterId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     PatientId:
       name: patientId
       in: path
@@ -1241,6 +1590,539 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
 
   schemas:
+    AllergyUpdate:
+      additionalProperties: false
+      properties:
+        status:
+          enum: [active, inactive, entered_in_error]
+          type: string
+      required: [status]
+      type: object
+    ClinicalAssessment:
+      additionalProperties: false
+      properties:
+        nyha_class:
+          default: null
+          enum: [I, II, III, IV, null]
+          type: [string, 'null']
+        ccs_class:
+          default: null
+          enum: ['0', I, II, III, IV, null]
+          type: [string, 'null']
+        killip_class:
+          default: null
+          enum: [I, II, III, IV, null]
+          type: [string, 'null']
+        jvp:
+          default: null
+          enum: [normal, raised, not_assessable, null]
+          type: [string, 'null']
+        jvp_cm:
+          default: null
+          maximum: 30
+          minimum: 0
+          type: [number, 'null']
+        peripheral_oedema:
+          default: null
+          enum: [none, ankle, below_knee, above_knee, sacral, anasarca, null]
+          type: [string, 'null']
+        pulmonary_rales:
+          default: null
+          type: [boolean, 'null']
+        s3_gallop:
+          default: null
+          type: [boolean, 'null']
+        orthopnoea:
+          default: null
+          type: [boolean, 'null']
+        pnd:
+          default: null
+          type: [boolean, 'null']
+        congestion_status:
+          default: null
+          enum: [euvolaemic, mild, moderate, severe, null]
+          type: [string, 'null']
+        hf_phenotype:
+          default: null
+          enum: [HFrEF, HFmrEF, HFpEF, HFimpEF, null]
+          type: [string, 'null']
+        cv_risk_category:
+          default: null
+          enum: [low, moderate, high, very_high, extreme, null]
+          type: [string, 'null']
+      type: object
+    DiagnosisUpdate:
+      additionalProperties: false
+      properties:
+        diagnosis_role:
+          default: null
+          enum: [working, final, comorbidity, past_history, complication, null]
+          type: [string, 'null']
+        certainty:
+          default: null
+          enum: [suspected, confirmed, refuted, null]
+          type: [string, 'null']
+        is_principal:
+          default: null
+          type: [boolean, 'null']
+        status:
+          default: null
+          enum: [active, resolved, entered_in_error, null]
+          type: [string, 'null']
+        resolved_date:
+          default: null
+          format: date
+          type: [string, 'null']
+      type: object
+    EncounterAmendment:
+      additionalProperties: false
+      properties:
+        field_name:
+          enum: [presenting_complaint, history_present_illness, clinical_history, examination_cvs, examination_resp, examination_other,
+            assessment, plan, lifestyle_advice, patient_education, referral_to]
+          type: string
+        amended_value: {maxLength: 20000, type: string}
+        reason: {maxLength: 500, minLength: 5, type: string}
+      required: [field_name, amended_value, reason]
+      type: object
+    EncounterComplaint:
+      additionalProperties: false
+      properties:
+        concept_code: {pattern: '^CX_[A-Z_]+$', type: string}
+        duration_value:
+          default: null
+          maximum: 1000
+          minimum: 0
+          type: [number, 'null']
+        duration_unit:
+          default: null
+          enum: [hours, days, weeks, months, years, null]
+          type: [string, 'null']
+        detail:
+          default: null
+          maxLength: 1000
+          type: [string, 'null']
+      required: [concept_code]
+      type: object
+    EncounterNoteFields:
+      additionalProperties: false
+      properties:
+        encounter_type:
+          default: null
+          enum: [new_consultation, follow_up, registry_visit, teleconsultation, telephone, inpatient_review, emergency, procedure,
+            retrospective_entry, null]
+          type: [string, 'null']
+        setting:
+          default: null
+          enum: [outpatient, inpatient, emergency, remote, null]
+          type: [string, 'null']
+        presenting_complaint:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        history_present_illness:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        clinical_history:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        examination_cvs:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        examination_resp:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        examination_other:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        assessment:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        plan:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        lifestyle_advice:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        patient_education:
+          default: null
+          maxLength: 20000
+          type: [string, 'null']
+        referral_to:
+          default: null
+          maxLength: 500
+          type: [string, 'null']
+        follow_up_date:
+          default: null
+          format: date
+          type: [string, 'null']
+      type: object
+    MedicationCourseEvent:
+      additionalProperties: false
+      properties:
+        event_type:
+          enum: [dose_change, hold, resume, discontinue, reconcile_continue]
+          type: string
+        effective_date:
+          default: null
+          format: date
+          type: [string, 'null']
+        dose:
+          anyOf:
+          - {$ref: '#/components/schemas/MedicationDose'}
+          - {type: 'null'}
+          default: null
+          description: Required for dose_change
+        reason_code:
+          default: null
+          pattern: ^RSN_[A-Z_]+$
+          type: [string, 'null']
+        reason_text:
+          default: null
+          maxLength: 500
+          type: [string, 'null']
+        encounter_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+      required: [event_type]
+      type: object
+    MedicationDose:
+      additionalProperties: false
+      properties:
+        product_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+        brand_name_text:
+          default: null
+          maxLength: 200
+          type: [string, 'null']
+        strength:
+          default: null
+          description: Per tablet/capsule/ml/unit, in the drug's reference unit; taken from the product when product_id is given
+          exclusiveMinimum: 0
+          maximum: 100000
+          type: [number, 'null']
+        strength_label:
+          default: null
+          maxLength: 50
+          type: [string, 'null']
+        dose_quantity: {exclusiveMinimum: 0, maximum: 1000, type: number}
+        dose_unit:
+          default: tablet
+          enum: [tablet, capsule, mg, mcg, ml, unit, puff, sachet, injection]
+          type: string
+        frequency_code:
+          enum: [OD, BD, TDS, QID, HS, weekly, Q2W, Q4W, Q6M, SOS, other]
+          type: string
+        doses_per_day:
+          default: null
+          description: Needed for SOS and other
+          exclusiveMinimum: 0
+          maximum: 24
+          type: [number, 'null']
+        route:
+          default: null
+          enum: [oral, sublingual, iv, sc, im, inhaled, transdermal, topical, other, null]
+          type: [string, 'null']
+        duration_days:
+          default: null
+          exclusiveMinimum: 0
+          maximum: 3650
+          type: [integer, 'null']
+        instructions:
+          default: null
+          maxLength: 1000
+          type: [string, 'null']
+      required: [dose_quantity, frequency_code]
+      type: object
+    NewAllergy:
+      additionalProperties: false
+      properties:
+        allergen_type:
+          enum: [drug, drug_class, contrast, food, other]
+          type: string
+        drug_code:
+          default: null
+          pattern: ^[A-Z0-9_]+$
+          type: [string, 'null']
+        drug_class_code:
+          default: null
+          pattern: ^[A-Z0-9_]+$
+          type: [string, 'null']
+        allergen_text: {maxLength: 200, minLength: 2, type: string}
+        reaction:
+          default: null
+          maxLength: 500
+          type: [string, 'null']
+        severity:
+          default: null
+          enum: [mild, moderate, severe, anaphylaxis, null]
+          type: [string, 'null']
+      required: [allergen_type, allergen_text]
+      type: object
+    NewDiagnosis:
+      additionalProperties: false
+      properties:
+        concept_code:
+          default: null
+          pattern: ^DX_[A-Z0-9_]+$
+          type: [string, 'null']
+        diagnosis_text:
+          default: null
+          maxLength: 500
+          minLength: 2
+          type: [string, 'null']
+        icd10_code:
+          default: null
+          pattern: ^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$
+          type: [string, 'null']
+        diagnosis_role:
+          enum: [working, final, comorbidity, past_history, complication]
+          type: string
+        certainty:
+          default: confirmed
+          enum: [suspected, confirmed]
+          type: string
+        is_principal: {default: false, type: boolean}
+        onset_date:
+          default: null
+          format: date
+          type: [string, 'null']
+        onset_precision:
+          default: null
+          enum: [day, month, year, null]
+          type: [string, 'null']
+        encounter_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+      required: [diagnosis_role]
+      type: object
+    NewEncounter:
+      additionalProperties: false
+      properties:
+        encounter_type:
+          default: follow_up
+          enum: [new_consultation, follow_up, registry_visit, teleconsultation, telephone, inpatient_review, emergency, procedure,
+            retrospective_entry]
+          type: string
+        setting:
+          default: outpatient
+          enum: [outpatient, inpatient, emergency, remote]
+          type: string
+        encounter_start:
+          default: null
+          format: date-time
+          type: [string, 'null']
+      type: object
+    NewMedication:
+      additionalProperties: false
+      properties:
+        product_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+        brand_name_text:
+          default: null
+          maxLength: 200
+          type: [string, 'null']
+        strength:
+          default: null
+          description: Per tablet/capsule/ml/unit, in the drug's reference unit; taken from the product when product_id is given
+          exclusiveMinimum: 0
+          maximum: 100000
+          type: [number, 'null']
+        strength_label:
+          default: null
+          maxLength: 50
+          type: [string, 'null']
+        dose_quantity: {exclusiveMinimum: 0, maximum: 1000, type: number}
+        dose_unit:
+          default: tablet
+          enum: [tablet, capsule, mg, mcg, ml, unit, puff, sachet, injection]
+          type: string
+        frequency_code:
+          enum: [OD, BD, TDS, QID, HS, weekly, Q2W, Q4W, Q6M, SOS, other]
+          type: string
+        doses_per_day:
+          default: null
+          description: Needed for SOS and other
+          exclusiveMinimum: 0
+          maximum: 24
+          type: [number, 'null']
+        route:
+          default: null
+          enum: [oral, sublingual, iv, sc, im, inhaled, transdermal, topical, other, null]
+          type: [string, 'null']
+        duration_days:
+          default: null
+          exclusiveMinimum: 0
+          maximum: 3650
+          type: [integer, 'null']
+        instructions:
+          default: null
+          maxLength: 1000
+          type: [string, 'null']
+        drug_code: {pattern: '^[A-Z0-9_]+$', type: string}
+        started_on:
+          default: null
+          format: date
+          type: [string, 'null']
+        indication:
+          default: null
+          maxLength: 300
+          type: [string, 'null']
+        reason_code:
+          default: null
+          pattern: ^RSN_[A-Z_]+$
+          type: [string, 'null']
+        reason_text:
+          default: null
+          maxLength: 500
+          type: [string, 'null']
+        prescriber_source:
+          default: this_centre
+          enum: [this_centre, external, patient_reported]
+          type: string
+        encounter_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+      required: [dose_quantity, frequency_code, drug_code]
+      type: object
+    NewVitals:
+      additionalProperties: false
+      properties:
+        encounter_id:
+          default: null
+          format: uuid
+          type: [string, 'null']
+        measured_at:
+          default: null
+          format: date-time
+          type: [string, 'null']
+        height_cm:
+          default: null
+          maximum: 250
+          minimum: 50
+          type: [number, 'null']
+        weight_kg:
+          default: null
+          maximum: 350
+          minimum: 2
+          type: [number, 'null']
+        waist_cm:
+          default: null
+          maximum: 250
+          minimum: 30
+          type: [number, 'null']
+        systolic_bp:
+          default: null
+          maximum: 300
+          minimum: 50
+          type: [integer, 'null']
+        diastolic_bp:
+          default: null
+          maximum: 200
+          minimum: 20
+          type: [integer, 'null']
+        bp_position:
+          default: null
+          enum: [sitting, supine, standing, null]
+          type: [string, 'null']
+        heart_rate:
+          default: null
+          maximum: 300
+          minimum: 20
+          type: [integer, 'null']
+        pulse_rhythm:
+          default: null
+          enum: [regular, irregular, null]
+          type: [string, 'null']
+        respiratory_rate:
+          default: null
+          maximum: 80
+          minimum: 4
+          type: [integer, 'null']
+        spo2:
+          default: null
+          maximum: 100
+          minimum: 40
+          type: [integer, 'null']
+        temperature_c:
+          default: null
+          maximum: 45
+          minimum: 30
+          type: [number, 'null']
+      type: object
+    SaveEncounter:
+      additionalProperties: false
+      properties:
+        note:
+          $ref: '#/components/schemas/EncounterNoteFields'
+          default: {encounter_type: null, setting: null, presenting_complaint: null, history_present_illness: null, clinical_history: null,
+            examination_cvs: null, examination_resp: null, examination_other: null, assessment: null, plan: null, lifestyle_advice: null,
+            patient_education: null, referral_to: null, follow_up_date: null}
+        complaints:
+          default: null
+          description: Replaces the list when given
+          items: {$ref: '#/components/schemas/EncounterComplaint'}
+          maxItems: 20
+          type: [array, 'null']
+        assessment:
+          anyOf:
+          - {$ref: '#/components/schemas/ClinicalAssessment'}
+          - {type: 'null'}
+          default: null
+          description: Replaces the structured assessment when given
+      type: object
+    VoidMedicationEvent:
+      additionalProperties: false
+      properties:
+        reason_text: {maxLength: 500, minLength: 5, type: string}
+      required: [reason_text]
+      type: object
+    Encounter:
+      type: object
+      description: A consultation with everything recorded in it
+      properties:
+        encounter_id: {type: string, format: uuid}
+        patient_id: {type: string, format: uuid}
+        encounter_type: {type: string}
+        status: {type: string, enum: [draft, signed, amended, entered_in_error]}
+        encounter_start: {type: string, format: date-time}
+        signed_at: {type: [string, 'null'], format: date-time}
+        complaints: {type: array, items: {type: object}}
+        clinical_assessment: {type: [object, 'null']}
+        vitals: {type: array, items: {type: object}}
+        diagnoses: {type: array, items: {type: object}}
+        medication_events: {type: array, items: {type: object}}
+        amendments: {type: array, items: {type: object}}
+        row_version: {type: integer}
+      additionalProperties: true
+    MedicationCourse:
+      type: object
+      properties:
+        course_id: {type: string, format: uuid}
+        drug_code: {type: string}
+        generic_name: {type: string}
+        reference_unit: {type: string}
+        status: {type: string, enum: [active, on_hold, stopped, entered_in_error]}
+        started_on: {type: string, format: date}
+        stopped_on: {type: [string, 'null'], format: date}
+        current_dose: {type: [object, 'null'], description: 'Latest dosing event, with daily_dose in the reference unit'}
+        events: {type: array, items: {type: object}}
+      additionalProperties: true
     Me:
       type: object
       required: [user_id, full_name, centres]

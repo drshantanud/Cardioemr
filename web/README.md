@@ -11,7 +11,8 @@ origin: `/api/v1/*` is passed through to the FastAPI backend (`CEMR_API_URL`), s
 | `/select-centre` | users with more than one centre or role | choose where and as what you are working; one choice is picked automatically |
 | `/patients` | assistant, nurse, clinician, coordinator, PI | search by name, patient ID or mobile; newest first |
 | `/patients/new` | same | register; warns about a possible duplicate at this centre before creating a second record |
-| `/patients/{id}` | same | header with allergies, details, consent, recent consultations; registries for clinician, coordinator and PI |
+| `/patients/{id}` | same | header with allergies, details, consent, current medicines, problem list, latest vitals, recent consultations; registries for clinician, coordinator and PI; clinicians start or continue a consultation |
+| `/patients/{id}/consultations/{eid}` | clinician writes and signs; nurse helps with the draft; others read | complaints, history, examination with vitals, NYHA/CCS/phenotype, diagnoses, medicines, plan and follow-up; saves itself while you type; the last visit, medicines, problems and latest results sit alongside (behind a fold on phones); a signed note is read-only and amended field by field with a reason |
 | `/patients/{id}/edit` | same | change details; needs a reason, refuses to overwrite someone else's newer edit |
 
 Every request sends `X-Centre-Id` and `X-Acting-Role`; the API and row-level security decide what is allowed.
