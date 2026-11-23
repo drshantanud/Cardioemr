@@ -126,13 +126,19 @@ export function GdmtPanel({ assessmentId, locked, refreshKey }: { assessmentId: 
 }
 
 /** LDL-C against the protocol's guidelines, once a risk category is chosen for each. */
-export function LipidTargetsPanel({ assessmentId, locked, refreshKey }: { assessmentId: string; locked: boolean; refreshKey?: number }) {
+/** Form questions the targets panel fills (risk category and LDL-C goal under each guideline). */
+export const LIPID_PANEL_VARIABLES = ["risk_category", "ldl_target", "lai_risk_category", "ldl_target_lai"];
+
+export function LipidTargetsPanel({ assessmentId, locked, refreshKey, onSaved }: {
+  assessmentId: string; locked: boolean; refreshKey?: number; onSaved?: (formValues: string[]) => void;
+}) {
   const { api } = useSession();
   const [t, setT] = useState<LipidTargets | null>(null);
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [replacesTyped, setReplacesTyped] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -148,20 +154,28 @@ export function LipidTargetsPanel({ assessmentId, locked, refreshKey }: { assess
   if (!t) return <Card title="LDL-C targets">{error ? <ErrorBanner message={error} /> : <Loading />}</Card>;
   const stored = Object.fromEntries(t.items.map((i) => [i.rule_set_code, i]));
   const changed = Object.entries(choice).filter(([k, v]) => v && stored[k]?.risk_category !== v);
-  const recategorising = changed.some(([k]) => stored[k]);
+  // a reason is needed to change a saved category, or to replace an answer already typed on the form
+  const recategorising = changed.some(([k]) => stored[k]) || replacesTyped;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ items: LipidTargets["items"] }>(`/assessments/${assessmentId}/lipid/targets`, {
+      const r = await api<{ items: LipidTargets["items"]; form_values: string[] }>(`/assessments/${assessmentId}/lipid/targets`, {
         method: "PUT", changeReason: recategorising ? reason.trim() : undefined,
         body: { categories: changed.map(([rule_set_code, risk_category]) => ({ rule_set_code, risk_category })) },
       });
       setT({ ...t, items: r.data.items });
       setReason("");
+      setReplacesTyped(false);
+      if (r.data.form_values.length) onSaved?.(r.data.form_values);
     } catch (e) {
-      setError(e instanceof ApiError ? e.userMessage : "Could not save");
+      if (e instanceof ApiError && e.status === 428 && !recategorising) {
+        setReplacesTyped(true);
+        setError("The form already has a different answer for this. Give a reason to replace it.");
+      } else {
+        setError(e instanceof ApiError ? e.userMessage : "Could not save");
+      }
     } finally {
       setBusy(false);
     }
@@ -203,7 +217,7 @@ export function LipidTargetsPanel({ assessmentId, locked, refreshKey }: { assess
         <div className="card-body row" style={{ justifyContent: "flex-end" }}>
           {recategorising && (
             <input className="input" style={{ flex: 1, minWidth: 200 }} aria-label="Reason for changing the risk category"
-              placeholder="Reason for changing the category" value={reason} onChange={(e) => setReason(e.target.value)} />
+              placeholder={replacesTyped ? "Reason for replacing the form's answer" : "Reason for changing the category"} value={reason} onChange={(e) => setReason(e.target.value)} />
           )}
           <button type="button" className="btn btn-sm btn-primary" disabled={busy || (recategorising && reason.trim().length < 3)} onClick={() => void save()}>
             Save categories

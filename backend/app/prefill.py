@@ -50,6 +50,10 @@ ECHO_COLUMN = {"lvef": "lvef", "lvef_method": "lvef_method", "lvedd_mm": "lvedd_
 GDMT_PILLAR = {"rasi": "RASI", "bb": "BB", "mra": "MRA", "sglt2i": "SGLT2I"}
 P2Y12_CODES = {"CLOPIDOGREL": "clopidogrel", "TICAGRELOR": "ticagrelor", "PRASUGREL": "prasugrel"}
 LDL_METHODS = {"direct", "friedewald", "martin_hopkins", "sampson"}
+# Lipid guideline -> (risk-category variable, LDL-C target variable) on the lipid registry form.
+# The LDL-C targets panel writes both; prefill can fill the target once a category is saved.
+LDL_GUIDELINE_VARIABLES = {"ESC_EAS_2019": ("risk_category", "ldl_target"),
+                           "LAI_2020": ("lai_risk_category", "ldl_target_lai")}
 MAX_TOLERATED_REASONS = {"intolerance", "hypotension", "hyperkalaemia", "renal_dysfunction", "bradycardia",
                          "contraindication", "worsening_hf"}
 
@@ -476,6 +480,27 @@ def r_ldl_reduction(ch: Chart, d: dict):
     raise NotAutomated
 
 
+def r_ldl_target(ch: Chart, d: dict):
+    """LDL-C goal from the risk category saved on the targets panel for this visit."""
+    code = next((g for g, (_, target) in LDL_GUIDELINE_VARIABLES.items() if target == d["variable_code"]), None)
+    if code is None:
+        raise NotAutomated
+    row = ch.ctx.one("""SELECT t.rule_set_id, t.ldl_target_mg_dl FROM registry.lipid_target_attainment t
+                          JOIN ref.rule_sets rs USING (rule_set_id)
+                         WHERE t.assessment_id = %s AND rs.rule_set_code = %s""", (ch.a["assessment_id"], code))
+    # The attainment row is keyed by (assessment, rule set): source_row_id carries the rule set.
+    return Found(row["ldl_target_mg_dl"], "registry.lipid_target_attainment", row["rule_set_id"]) if row else None
+
+
+def r_protocol_rule_set(ch: Chart, d: dict):
+    """The protocol's primary LDL-C guideline, as 'CODE vN'."""
+    rid = ch.enrolment["ldl_target_rule_set_id"]
+    if rid is None:
+        return None
+    rs = ch.ctx.one("SELECT rule_set_code, version FROM ref.rule_sets WHERE rule_set_id = %s", (rid,))
+    return Found(f"{rs['rule_set_code']} v{rs['version']}", "ref.rule_sets", rid)
+
+
 def r_non_hdl(ch: Chart, d: dict):
     tc, hdl = ch.lab("TC"), ch.lab("HDL_C")
     if not tc or not hdl:
@@ -589,6 +614,8 @@ RULES: dict[str, Callable[[Chart, dict], Found | None]] = {
     "calc.ldl_pct_reduction": r_ldl_reduction,
     "calc.ldl_pct_reduction >= 50": r_ldl_reduction,
     "calc.non_hdl": r_non_hdl,
+    "calc.ldl_target": r_ldl_target,
+    "calc.protocol_rule_set": r_protocol_rule_set,
     "calc.event_count": r_event_since_last,
     "calc.event_exists": r_event_since_last,
     "emr.event_before_index": r_event_before_index,

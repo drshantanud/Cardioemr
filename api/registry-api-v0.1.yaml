@@ -1117,6 +1117,12 @@ paths:
       description: |
         LDL-C is the ldl_c value on the form, else the nearest chart result (-30..+7 d); % reduction is from
         the lipid enrolment baseline. Changing a saved category needs X-Change-Reason (428).
+
+        The saved categories are also written into this visit's form questions, where the protocol asks them:
+        risk_category and ldl_target (ESC_EAS_2019), lai_risk_category and ldl_target_lai (LAI_2020). A
+        category is stored as entered; a target as calculated, pointing at registry.lipid_target_attainment
+        (source_row_id is the rule set). Replacing an answer already typed on the form needs X-Change-Reason
+        (428, detail names the question); a replaced value goes back to unverified.
       x-roles: [clinician, research_coordinator, principal_investigator]
       requestBody:
         required: true
@@ -1142,8 +1148,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [items, form_values]
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/LipidTargetAttainment'}}
+                  form_values:
+                    type: array
+                    description: Form questions this call wrote or changed (empty when they already matched)
+                    items: {type: string, examples: [risk_category, ldl_target]}
         default: {$ref: '#/components/responses/Problem'}
 
   /patients/{patientId}/pci-procedures:

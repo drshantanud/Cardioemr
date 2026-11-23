@@ -75,3 +75,44 @@ test("nurse sees the suggestion but cannot screen", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Ramesh Kulkarni" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Screen for a registry" })).toHaveCount(0);
 });
+
+test("lipid baseline: the targets panel fills the form's risk-category questions", async ({ page }) => {
+  await signInAs(page, "Dr A");
+  await expect(page.getByRole("heading", { name: "Patients" })).toBeVisible();
+  await registerPatient(page, "Kavita");
+
+  await page.getByRole("button", { name: "Record consent" }).click();
+  await page.getByLabel("Registry protocol").selectOption({ label: "CEMR-LIPID v1" });
+  await page.getByLabel("Form version").fill("ICF v1.0");
+  await page.getByLabel("Language").fill("Hindi");
+  await page.locator(".subpanel").getByRole("button", { name: "Record consent" }).click();
+
+  await page.getByRole("button", { name: "Screen for a registry" }).click();
+  await page.getByRole("button", { name: "Lipid management registry" }).click();
+  await expect(page.getByRole("heading", { name: "1. Eligibility" })).toBeVisible();
+  const groups = page.locator(".criteria li");
+  const n = await groups.count();
+  for (let i = 0; i < n; i++) {
+    const row = groups.nth(i);
+    const include = (await row.locator(".badge").textContent()) === "Include";
+    await row.getByRole("button", { name: include ? "Yes" : "No", exact: true }).click();
+  }
+  await page.getByRole("button", { name: "Confirm eligible" }).click();
+  await page.getByLabel("Prevention").selectOption("secondary");
+  await page.getByLabel("Baseline LDL-C is").selectOption("on_treatment_at_enrolment");
+  await page.getByRole("button", { name: "Established CAD" }).click();
+  await page.getByLabel("Baseline LDL-C (mg/dL)").fill("120");
+  await page.getByRole("button", { name: "Enrol", exact: true }).click();
+  await expect(page.locator(".patient-header").getByText("enrolled", { exact: true })).toBeVisible();
+
+  await page.locator(".schedule li", { hasText: "BL" }).getByRole("button", { name: "Start visit" }).click();
+  await expect(page.getByRole("heading", { name: "LDL-C targets" })).toBeVisible();
+  const risk = page.locator(".var-row", { hasText: "Set from the LDL-C targets panel" }).first();
+  await expect(risk).toBeVisible();
+
+  await page.getByLabel("Risk category under ESC_EAS_2019").selectOption("very_high");
+  await page.getByRole("button", { name: "Save categories" }).click();
+  await expect(page.getByText(/against <55 mg\/dL/)).toBeVisible();
+  await expect(page.locator("#var-risk_category")).toHaveValue("very_high");
+  await expect(page.locator("#row-ldl_target input")).toHaveValue("55");
+});

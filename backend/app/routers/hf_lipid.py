@@ -5,11 +5,12 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends
+from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..context import Ctx, roles
 from ..errors import Problem
-from ..prefill import Chart, dose_status
+from ..prefill import LDL_GUIDELINE_VARIABLES, Chart, dose_status
 from .enrolment import _jsonable
 
 router = APIRouter()
@@ -263,4 +264,67 @@ def save_lipid_targets(assessment_id: uuid.UUID, body: RiskCategories, ctx: Ctx 
                    ldl_mg_dl = EXCLUDED.ldl_mg_dl, ldl_pct_reduction = EXCLUDED.ldl_pct_reduction""",
             (assessment_id, g["rule_set_id"], a["patient_id"], ctx.centre_id, g["is_primary"], c.risk_category,
              ldl, pct))
-    return {"items": _attainment_rows(ctx, assessment_id)}
+    written = _fill_form_values(ctx, a, guides)
+    return {"items": _attainment_rows(ctx, assessment_id), "form_values": written}
+
+
+def _fill_form_values(ctx: Ctx, a: dict, guides: dict[str, dict]) -> list[str]:
+    """Copy each saved risk category, and its LDL-C goal, into this visit's form questions
+    (risk_category / ldl_target for ESC/EAS, lai_risk_category / ldl_target_lai for LAI), so the
+    form and the panel never disagree.  Only questions the protocol asks at this visit are written.
+    A changed value goes back to unverified; the audit trail keeps the old one."""
+    asked = {r["variable_code"]: r for r in ctx.all("""
+        SELECT DISTINCT d.variable_code, d.variable_id FROM registry.protocol_variables pv
+          JOIN registry.variable_definitions d USING (variable_id)
+          JOIN registry.enrolments e ON e.protocol_id = pv.protocol_id
+         WHERE e.enrolment_id = %s AND pv.visit_code IN (%s, '*')""", (a["enrolment_id"], a["visit_code"]))}
+    want: list[tuple[str, str, object, str | None]] = []      # (variable, column, value, source table)
+    for t in _attainment_rows(ctx, a["assessment_id"]):
+        names = LDL_GUIDELINE_VARIABLES.get(t["rule_set_code"])
+        if not names:
+            continue
+        want.append((names[0], "coded_value", t["risk_category"], None))
+        want.append((names[1], "numeric_value", t["ldl_target_mg_dl"], "registry.lipid_target_attainment"))
+    written = []
+    for code, column, value, table in want:
+        if code not in asked:
+            continue
+        rule_set_id = next(g["rule_set_id"] for k, g in guides.items() if code in LDL_GUIDELINE_VARIABLES.get(k, ()))
+        source = ("calculated", table, rule_set_id) if table else ("entered", None, None)
+        cur = ctx.one(sql.SQL("SELECT value_id, value_status, {} AS v, source_kind FROM registry.variable_values "
+                              "WHERE assessment_id = %s AND variable_id = %s").format(sql.Identifier(column)),
+                      (a["assessment_id"], asked[code]["variable_id"]))
+        if cur and cur["value_status"] == "present" and _same(cur["v"], value):
+            continue
+        if cur and cur["source_kind"] == "entered" and cur["value_status"] == "present" and not ctx.change_reason:
+            raise Problem(428, "CHANGE_REASON_REQUIRED",
+                          "X-Change-Reason is required: this replaces an answer already entered on the form",
+                          detail=code)
+        if cur is None:
+            ctx.conn.execute(sql.SQL(
+                "INSERT INTO registry.variable_values (assessment_id, patient_id, centre_id, variable_id, value_status, "
+                "source_kind, source_table, source_row_id, {}) VALUES (%s, %s, %s, %s, 'present', %s, %s, %s, %s)"
+            ).format(sql.Identifier(column)),
+                (a["assessment_id"], a["patient_id"], ctx.centre_id, asked[code]["variable_id"], *source, value))
+        else:
+            cleared = sql.SQL(", ").join(sql.SQL("{} = NULL").format(sql.Identifier(c)) for c in VALUE_COLUMNS
+                                         if c != column)
+            ctx.conn.execute(sql.SQL(
+                "UPDATE registry.variable_values SET value_status = 'present', {}, {} = %s, entered_value = NULL, "
+                "entered_unit = NULL, source_kind = %s, source_table = %s, source_row_id = %s, "
+                "verification_status = 'unverified' WHERE value_id = %s").format(cleared, sql.Identifier(column)),
+                (value, *source, cur["value_id"]))
+        written.append(code)
+    return written
+
+
+VALUE_COLUMNS = ("numeric_value", "text_value", "date_value", "boolean_value", "coded_value", "coded_values")
+
+
+def _same(a, b) -> bool:
+    if a is None or b is None:
+        return a is b
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return str(a) == str(b)

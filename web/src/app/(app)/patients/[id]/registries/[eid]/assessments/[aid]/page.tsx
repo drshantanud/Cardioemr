@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { GdmtPanel, LipidTargetsPanel } from "@/components/RegistryPanels";
+import { GdmtPanel, LIPID_PANEL_VARIABLES, LipidTargetsPanel } from "@/components/RegistryPanels";
 import { ErrorBanner, Loading, StatusBadge } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -105,6 +105,7 @@ function VariableRow({ row, draft, set, locked, error, onVerify }: {
 }) {
   const { definition: d, value: v } = row;
   const missing = d.requirement === "mandatory" && !v;
+  const fromPanel = LIPID_PANEL_VARIABLES.includes(d.variable_code);
   const [asking, setAsking] = useState(false);
   const [query, setQuery] = useState("");
   return (
@@ -115,7 +116,8 @@ function VariableRow({ row, draft, set, locked, error, onVerify }: {
         </label>
         {missing && <span className="missing-tag">required</span>}
         <div className="small muted">
-          {d.condition_text ? `${d.condition_text}` : d.requirement === "conditional" ? "When it applies" : ""}
+          {fromPanel ? "Set from the LDL-C targets panel"
+            : d.condition_text ? `${d.condition_text}` : d.requirement === "conditional" ? "When it applies" : ""}
         </div>
       </div>
       <div className="var-input">
@@ -188,6 +190,21 @@ function AssessmentScreen() {
     setDrafts(Object.fromEntries(r.data.variables.map((row) => [row.definition.variable_code, draftOf(row.definition, row.value)])));
     setFieldErrors({});
     return r.data;
+  }, [api, aid]);
+
+  /** The targets panel wrote these questions: show the new values, keep every other unsaved draft. */
+  const panelFilled = useCallback(async (codes: string[]) => {
+    try {
+      const r = await api<Assessment>(`/assessments/${aid}`);
+      setA(r.data);
+      setDrafts((cur) => ({
+        ...cur,
+        ...Object.fromEntries(r.data.variables.filter((row) => codes.includes(row.definition.variable_code))
+          .map((row) => [row.definition.variable_code, draftOf(row.definition, row.value)])),
+      }));
+    } catch {
+      /* the panel already shows its own result; the form catches up on the next load */
+    }
   }, [api, aid]);
 
   useEffect(() => {
@@ -437,7 +454,7 @@ function AssessmentScreen() {
         </div>
         <aside className="stack consult-aside-plain">
           {enrolment.registry_code === "HF" && <GdmtPanel assessmentId={aid} locked={locked} refreshKey={refresh} />}
-          {enrolment.registry_code === "LIPID" && <LipidTargetsPanel assessmentId={aid} locked={locked} refreshKey={refresh} />}
+          {enrolment.registry_code === "LIPID" && <LipidTargetsPanel assessmentId={aid} locked={locked} refreshKey={refresh} onSaved={(codes) => void panelFilled(codes)} />}
         </aside>
       </div>
     </>
