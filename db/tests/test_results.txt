@@ -57,7 +57,7 @@ PASS  no identifier columns in any research view
 PASS  PI sees HF assessment and event, with days from index
 PASS  event placed at day 7 after index
 PASS  PI cannot reach identifiable centre records
-PASS  requester cannot approve their own export (four-eyes) [23514: new row for relation "export_jobs" violates check constraint "export_jobs_four_eyes"]
+PASS  requester cannot approve their own export (four-eyes) [23514: requester cannot decide their own export]
 --- 8. Cross-centre identity linkage without exposing identifiers
 PASS  centre B numbers its own patients
 PASS  match keys are not readable by any app role [42501: permission denied for table patient_match_keys]
@@ -135,4 +135,53 @@ PASS  centre A chain: only the row test 0001 tampered with fails; every later ro
 PASS  LAI 2020 rule set active and approved
 PASS  LAI targets unchanged: six risk categories
 PASS  other rule sets remain draft until verified
-Total: 120 passed, 0 failed (migrations 0001-0004, 2026-11-22)
+--- 18. Migration 0006: unit conversion on entry
+PASS  LDL-C 2.6 mmol/L stored as 100.54 mg/dL
+PASS  value and unit as typed are kept
+PASS  creatinine 97 umol/L = 1.10 mg/dL
+PASS  haemoglobin 128 g/L = 12.8 g/dL
+PASS  weight 165 lb = 74.84 kg
+PASS  integer variable rounds: 16 kPa = 120 mmHg
+PASS  unknown unit refused [cemr:UNIT_NOT_CONVERTIBLE: variable hdl_c is recorded in mg/dL; mg% cannot be converted]
+PASS  eGFR does not accept a clearance in mL/min [cemr:UNIT_NOT_CONVERTIBLE: variable egfr is recorded in mL/min/1.73m2; mL/min cannot be converted]
+PASS  coded variable takes no unit [cemr:UNIT_NOT_CONVERTIBLE: variable presentation takes no unit]
+PASS  converted value is range-checked (HDL-C 50 mmol/L) [cemr:VALUE_OUT_OF_RANGE: variable hdl_c value 1933.50 outside 5 to 200]
+PASS  accepted units for LDL-C: mg/dL, mmol/L
+--- 19. Migration 0006: clinical events and adjudication
+PASS  nurse reports a stroke
+PASS  nurse cannot read adjudications [42501: permission denied for table event_adjudications]
+PASS  PCI link on a stroke refused [cemr:EVENT_INVALID: a detail field does not apply to a stroke event]
+PASS  future event date refused [cemr:EVENT_INVALID: event date is in the future]
+PASS  stroke opened one pending CAD ischaemic-stroke adjudication (withdrawn HF enrolment opens none)
+PASS  users cannot open adjudications by hand [cemr:ADJUDICATION_ROLE: adjudications are opened by the database when an event is reported]
+PASS  classification outside the system refused [cemr:CLASSIFICATION_INVALID: classification lacunar is not a custom code]
+PASS  PI adjudicates: meets_endpoint follows the classification; adjudicator stamped
+PASS  adjudicated ischaemic stroke counts for ISCH_STROKE and for the MACE3 composite
+PASS  changing a decision needs a reason [cemr:CHANGE_REASON_REQUIRED: changing an adjudication decision needs a change reason]
+PASS  pending is set by the system only [cemr:ADJUDICATION_ROLE: status pending is set by the system]
+PASS  coordinator cannot decide an adjudication [cemr:ADJUDICATION_ROLE: role research_coordinator may not adjudicate events]
+PASS  event type is fixed [cemr:EVENT_TYPE_FIXED: event type cannot change; mark this event entered in error and report the correct one]
+PASS  changing an event needs a reason [cemr:CHANGE_REASON_REQUIRED: changing a reported event needs a change reason]
+PASS  changed MI details send the adjudication back to pending
+PASS  event entered in error withdraws its adjudication
+PASS  an event entered in error is closed [cemr:EVENT_WITHDRAWN: event was entered in error and cannot change]
+PASS  reporter cannot adjudicate own event [cemr:ADJUDICATOR_CONFLICT: the person who reported an event may not adjudicate it]
+--- 20. Migration 0006: reports and research exports
+PASS  missing-data view lists the CAD baseline's mandatory variables
+PASS  nurse gets follow-up facts for the CAD enrolment at her centre
+PASS  follow-up facts carry the mobile for the call list
+PASS  nurse cannot read registry values [42501: permission denied for view v_mandatory_values]
+PASS  export requested; role recorded
+PASS  pseudonymised value view shows the converted LDL-C
+PASS  time to first MACE: the ischaemic stroke on day 4
+PASS  no identifiers or exact dates in any research view
+PASS  request cannot be edited [cemr:EXPORT_STATE: an export request cannot be changed; make a new request]
+PASS  coordinator cannot approve [cemr:EXPORT_ROLE: only a principal investigator decides exports]
+PASS  cannot run before approval [cemr:EXPORT_STATE: export cannot go from requested to running]
+PASS  PI approves; approver stamped by the database
+PASS  only the requester's own access runs an export [cemr:EXPORT_ROLE: exports run with the requester's own access]
+PASS  completed export needs file, hash, row count and expiry [cemr:EXPORT_STATE: a completed export needs its file, hash, row count and expiry]
+PASS  every HINT tag raised by a function (0006 included) is in ref.api_error_map
+PASS  every mapped constraint or index still exists
+PASS  every endpoint definition is still draft, waiting for clinical sign-off
+Total: 166 passed, 0 failed (migrations 0001-0006, 2026-11-23)

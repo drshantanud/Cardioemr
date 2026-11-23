@@ -36,6 +36,7 @@ class Ctx:
     change_reason: str | None
     request: Request
     extras: dict[str, Any] = field(default_factory=dict)
+    after_commit: list = field(default_factory=list)   # callables run once the request's transaction commits
 
     def one(self, query, params=None) -> dict | None:
         with self.conn.cursor(row_factory=dict_row) as cur:
@@ -93,7 +94,11 @@ def roles(*allowed: str):
                 held = conn.execute("SELECT app.user_has_role_at(%s, %s)", (x_centre_id, x_acting_role)).fetchone()[0]
                 if not held:
                     raise Problem(403, "ROLE_NOT_HELD", "You do not hold this role at this centre")
-                yield Ctx(conn, user_id, x_centre_id, x_acting_role, x_change_reason, request)
+                ctx = Ctx(conn, user_id, x_centre_id, x_acting_role, x_change_reason, request)
+                yield ctx
+        # Reached only when the transaction committed; the connection is back in the pool.
+        for fn in ctx.after_commit:
+            fn()
 
     return dependency
 

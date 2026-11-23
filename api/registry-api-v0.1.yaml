@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: CardioEMR Registry API
   version: 0.1.0
-  summary: Registry side of CardioEMR (HF, lipid, CAD registries) on top of migrations 0001-0003.
+  summary: Registry side of CardioEMR (HF, lipid, CAD registries) on top of migrations 0001-0006.
   description: |
     Every request runs in one database transaction as login role `cardioemr_api`, which then does
     `SET LOCAL ROLE r_<X-Acting-Role>` and sets `app.user_id`, `app.centre_id` and, when given,
@@ -740,6 +740,72 @@ paths:
                   adjudications: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
         default: {$ref: '#/components/responses/Problem'}
 
+  /events/{eventId}:
+    parameters:
+      - {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    get:
+      tags: [Events]
+      operationId: getEvent
+      summary: One event with its adjudications (adjudications are empty for nurses)
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      responses:
+        '200':
+          description: Event
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: {$ref: '#/components/schemas/ClinicalEvent'}
+                  adjudications: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Events]
+      operationId: correctEvent
+      summary: Replace an event's details, or mark it source_verified or entered_in_error
+      description: |
+        Type and patient never change: enter the event in error and report it again. Changing facts an
+        adjudicator relied on sends decided adjudications back to pending; entered_in_error withdraws them.
+      x-roles: [clinician, research_coordinator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/components/schemas/ClinicalEvent'}
+                - type: object
+                  properties:
+                    status: {type: string, enum: [reported, source_verified, entered_in_error]}
+      responses:
+        '200':
+          description: Event after the change, with its adjudications
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}/events:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Events]
+      operationId: listPatientEvents
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      parameters:
+        - {name: include_entered_in_error, in: query, schema: {type: boolean, default: false}}
+      responses:
+        '200':
+          description: The patient's events at this centre, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ClinicalEvent'}}
+        default: {$ref: '#/components/responses/Problem'}
+
   /events/{eventId}/adjudications/{adjudicationId}:
     parameters:
       - {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -750,8 +816,12 @@ paths:
       tags: [Events]
       operationId: adjudicate
       summary: Record a human adjudication against the protocol's endpoint definition
+      description: |
+        The adjudicator is the caller and may not be the person who reported the event (422 ADJUDICATOR_CONFLICT).
+        Changing an adjudicated or not-an-event decision needs X-Change-Reason. A withdrawn adjudication
+        (event entered in error) is closed (409 EVENT_WITHDRAWN).
       x-roles: [principal_investigator, clinician]
-      parameters: [{$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReason'}]
       requestBody:
         required: true
         content:
@@ -761,8 +831,8 @@ paths:
               required: [adjudication_status]
               properties:
                 adjudication_status: {type: string, enum: [in_review, adjudicated, not_an_event, insufficient_data]}
-                endpoint_code: {type: string, examples: [MI, ST, BLEED_BARC35, TLR]}
-                classification: {type: string, examples: [UDMI_type1, ARC2_ST_definite, BARC_3a]}
+                endpoint_code: {type: string, examples: [MI, ST, BLEED_BARC35, TLR], description: 'Optional; must match the adjudication''s endpoint'}
+                classification: {type: string, examples: ['1', definite, 3a, cardiovascular, ischaemic], description: 'A code of the endpoint''s classification system (ref.adjudication_classifications). When the endpoint lists qualifying classifications, meets_endpoint follows from it.'}
                 meets_endpoint: {type: boolean}
                 committee_reference: {type: string}
                 notes: {type: string}
@@ -824,6 +894,11 @@ paths:
                             enrolment_id: {type: string, format: uuid}
                             patient_id: {type: string, format: uuid}
                             local_patient_code: {type: string}
+                            patient_name: {type: string}
+                            mobile: {type: [string, 'null']}
+                            visit_label: {type: string}
+                            days_until_window_closes: {type: integer}
+                            death_reported_on: {type: [string, 'null'], format: date, description: Visits opening after a reported death are left out}
         default: {$ref: '#/components/responses/Problem'}
 
   /protocols/{protocolId}/missing-data:
@@ -853,16 +928,50 @@ paths:
                         variable_label: {type: string}
                         assessments_due: {type: integer}
                         missing: {type: integer}
+                        recorded_as_not_available: {type: integer, description: 'Values recorded as not_done, unknown, not_applicable or declined'}
+                        queried: {type: integer}
                         assessment_ids: {type: array, items: {type: string, format: uuid}}
+                  totals:
+                    type: object
+                    properties:
+                      assessments: {type: integer}
+                      mandatory_values: {type: integer}
+                      missing: {type: integer}
+                      completeness_pct: {type: [number, 'null']}
         default: {$ref: '#/components/responses/Problem'}
 
   /exports:
+    get:
+      tags: [Exports]
+      operationId: listExports
+      summary: Export jobs of the protocols the caller is a study member of, newest first
+      x-roles: [research_coordinator, principal_investigator]
+      parameters:
+        - {$ref: '#/components/parameters/CentreId'}
+        - {$ref: '#/components/parameters/ActingRole'}
+        - {name: protocol_id, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {type: string, enum: [requested, approved, rejected, running, completed, failed, expired]}}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: Export jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ExportJob'}}
+        default: {$ref: '#/components/responses/Problem'}
     post:
       tags: [Exports]
       operationId: requestExport
       summary: Request a pseudonymised research export (status requested)
+      description: |
+        Needs an active study membership with export rights. variable_codes must belong to the protocol,
+        centre_ids to the requester's study centres. cohort_filter keys: enrolment_status (list),
+        index_year_from, index_year_to.
       x-roles: [research_coordinator, principal_investigator]
-      parameters: [{$ref: '#/components/parameters/ActingRole'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}, {$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
         required: true
         content:
@@ -878,6 +987,7 @@ paths:
   /exports/{exportId}:
     parameters:
       - {name: exportId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
       - {$ref: '#/components/parameters/ActingRole'}
     get:
       tags: [Exports]
@@ -890,14 +1000,39 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/ExportJob'}}}
         default: {$ref: '#/components/responses/Problem'}
 
+  /exports/{exportId}/file:
+    parameters:
+      - {name: exportId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+      - {name: expires, in: query, required: true, schema: {type: integer}}
+      - {name: sig, in: query, required: true, schema: {type: string}}
+    get:
+      tags: [Exports]
+      operationId: downloadExport
+      summary: The export file (zip of CSV tables, or xlsx), for the requester only, via the signed download_url
+      x-roles: [research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: File; X-Content-SHA256 carries its hash. Every download is written to audit.access_log.
+          content:
+            application/zip: {}
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
+        default: {$ref: '#/components/responses/Problem'}
+
   /exports/{exportId}/decision:
     parameters:
       - {name: exportId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
       - {$ref: '#/components/parameters/ActingRole'}
     post:
       tags: [Exports]
       operationId: decideExport
       summary: Approve or reject; the approver must not be the requester (four-eyes)
+      description: |
+        After the decision commits, an approved export is generated as the requester, with the requester's
+        role and study access, so it never holds more than they may see. Files are kept for
+        CEMR_EXPORT_RETENTION_DAYS (default 7).
       x-roles: [principal_investigator]
       parameters: [{$ref: '#/components/parameters/IfMatch'}]
       requestBody:
@@ -1014,7 +1149,8 @@ components:
           enum: [VALIDATION_FAILED, PROTOCOL_MISMATCH, VALUE_OUT_OF_RANGE, CODE_NOT_ALLOWED, WRONG_VALUE_TYPE, MANDATORY_MISSING,
                  ASSESSMENT_LOCKED, ASSESSMENT_INCOMPLETE, OPEN_QUERIES, CONSENT_REQUIRED, SITE_NOT_ACTIVE, NOT_ELIGIBLE, ALREADY_ENROLLED,
                  DUPLICATE_VISIT, RISK_CATEGORY_UNKNOWN, FOUR_EYES, CHANGE_REASON_REQUIRED, STALE_VERSION,
-                 ROLE_NOT_HELD, FORBIDDEN, NOT_FOUND, CONFLICT, IDEMPOTENCY_MISMATCH, RETRY_LATER]
+                 ROLE_NOT_HELD, FORBIDDEN, NOT_FOUND, CONFLICT, IDEMPOTENCY_MISMATCH, RETRY_LATER,
+                 UNIT_NOT_CONVERTIBLE, EVENT_WITHDRAWN, ADJUDICATOR_CONFLICT, CLASSIFICATION_INVALID]
         sqlstate: {type: string, description: Underlying SQLSTATE, for support only}
         errors:
           type: array
@@ -1107,6 +1243,10 @@ components:
         description: {type: string}
         data_type: {type: string, enum: [numeric, integer, text, date, boolean, coded, multi_coded]}
         unit: {type: [string, 'null']}
+        accepted_units:
+          type: [array, 'null']
+          items: {type: string}
+          description: Units a value may be entered in (the variable's own unit first); the API converts (migration 0006)
         allowed_values:
           type: [array, 'null']
           items: {type: object, properties: {code: {type: string}, label: {type: string}}}
@@ -1259,7 +1399,7 @@ components:
         variable_code: {type: string}
         value_status: {type: string, enum: [present, not_done, unknown, not_applicable, declined], default: present}
         value: {description: 'number, string (text, date or code), boolean, or array of codes, per data_type'}
-        unit: {type: string, description: Only when entering in an alternative unit the API converts}
+        unit: {type: string, description: 'Optional: a unit from the variable''s accepted_units. The value is converted to the variable''s unit (integers to whole numbers, other numbers to 2 decimals) and the typed value and unit are kept as entered_value / entered_unit. 422 UNIT_NOT_CONVERTIBLE otherwise.'}
         row_version: {type: integer, description: Required when changing an existing value}
 
     VariableValue:
@@ -1269,6 +1409,8 @@ components:
         definition_version: {type: integer}
         value_status: {type: string}
         value: {}
+        entered_value: {type: [number, 'null'], description: Value as typed when it was entered in another unit}
+        entered_unit: {type: [string, 'null']}
         source_kind: {type: string, enum: [entered, emr_derived, calculated, ai_extracted]}
         source_table: {type: [string, 'null']}
         source_row_id: {type: [string, 'null'], format: uuid}
@@ -1422,11 +1564,23 @@ components:
         endpoint_code: {type: [string, 'null']}
         event_type: {type: string}
         event_date: {type: string, format: date}
-        adjudication_status: {type: string, enum: [pending, in_review, adjudicated, not_an_event, insufficient_data]}
+        endpoint_label: {type: [string, 'null']}
+        classification_system: {type: [string, 'null'], enum: [ARC-2, BARC, UDMI-4, HF-ARC, VARC-3, MVARC, custom, null]}
+        qualifying_classifications: {type: [array, 'null'], items: {type: string}}
+        event_day: {type: [integer, 'null'], description: Days from the enrolment index date}
+        adjudication_status: {type: string, enum: [pending, in_review, adjudicated, not_an_event, insufficient_data, event_withdrawn]}
         classification: {type: [string, 'null']}
         meets_endpoint: {type: [boolean, 'null']}
         adjudicated_by: {type: [string, 'null'], format: uuid}
         adjudicated_at: {type: [string, 'null'], format: date-time}
+        committee_reference: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
+        centre_code: {type: string}
+        study_subject_code: {type: [string, 'null']}
+        patient_id: {type: [string, 'null'], format: uuid, description: Only when the event is at the acting centre}
+        event:
+          type: object
+          description: Event facts for the adjudicator (facility only at the acting centre)
         row_version: {type: integer}
 
     ExportRequest:
@@ -1455,5 +1609,14 @@ components:
             approved_by: {type: [string, 'null'], format: uuid}
             row_count: {type: [integer, 'null']}
             file_sha256: {type: [string, 'null']}
-            download_url: {type: [string, 'null'], format: uri}
+            download_url: {type: [string, 'null'], format: uri, description: Requester only; signed, valid 15 minutes}
             expires_at: {type: [string, 'null'], format: date-time}
+            requested_role: {type: string, enum: [research_coordinator, principal_investigator]}
+            approved_at: {type: [string, 'null'], format: date-time}
+            decision_note: {type: [string, 'null']}
+            started_at: {type: [string, 'null'], format: date-time}
+            completed_at: {type: [string, 'null'], format: date-time}
+            failure_reason: {type: [string, 'null']}
+            missing_value_codes: {type: object}
+            manifest: {type: [object, 'null'], description: 'What the file holds: tables and row counts, centres, de-identification rules'}
+            row_version: {type: integer}

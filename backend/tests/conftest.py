@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import tempfile
 import time
 import uuid
 
@@ -29,6 +30,10 @@ ISSUER, AUDIENCE = "https://idp.test/", "cardioemr-api"
 CENTRE_A = "00000000-0000-0000-0000-00000000c0a1"
 CENTRE_B = "00000000-0000-0000-0000-00000000c0b1"
 PATIENT = "10000000-0000-0000-0000-000000000001"
+PATIENT3 = "10000000-0000-0000-0000-000000000003"
+HF_ENROLMENT3 = "1b000000-0000-0000-0000-000000000032"
+CAD_ENROLMENT3 = "1b000000-0000-0000-0000-000000000034"
+CAD_BASELINE3 = "1c000000-0000-0000-0000-000000000034"
 HF_CONSENT = "15000000-0000-0000-0000-000000000002"
 CARE_CONSENT = "15000000-0000-0000-0000-000000000001"
 SUGGESTION = "18000000-0000-0000-0000-000000000001"
@@ -70,7 +75,9 @@ def keypair():
 @pytest.fixture(scope="session")
 def client(database, keypair):
     verifier = TokenVerifier(ISSUER, AUDIENCE, jwk_client=_StaticJwks(keypair.public_key()))
-    app = create_app(Settings(database_url=database, oidc_issuer=ISSUER, oidc_audience=AUDIENCE), verifier)
+    settings = Settings(database_url=database, oidc_issuer=ISSUER, oidc_audience=AUDIENCE,
+                        export_dir=tempfile.mkdtemp(prefix="cemr-exports-"))
+    app = create_app(settings, verifier)
     with TestClient(app) as c:
         yield c
 

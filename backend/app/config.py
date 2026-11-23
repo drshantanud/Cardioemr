@@ -14,6 +14,13 @@ class Settings:
     auth_provider: str = field(default_factory=lambda: os.environ.get("CEMR_AUTH_PROVIDER", "oidc"))
     pool_min: int = field(default_factory=lambda: int(os.environ.get("CEMR_DB_POOL_MIN", "1")))
     pool_max: int = field(default_factory=lambda: int(os.environ.get("CEMR_DB_POOL_MAX", "10")))
+    # Research exports: where finished files are kept, and the key that signs download links.
+    # With no CEMR_EXPORT_DIR an approved export fails with a clear reason; with no URL key a
+    # random key is made at start-up (links then stop working on restart).
+    export_dir: str = field(default_factory=lambda: os.environ.get("CEMR_EXPORT_DIR", ""))
+    export_url_key: str = field(default_factory=lambda: os.environ.get("CEMR_EXPORT_URL_KEY", ""))
+    export_retention_days: int = field(default_factory=lambda: int(os.environ.get("CEMR_EXPORT_RETENTION_DAYS", "7")))
+    export_link_minutes: int = 15
 
 
 def get_settings() -> Settings:
