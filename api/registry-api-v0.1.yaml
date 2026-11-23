@@ -21,6 +21,8 @@ servers:
 security:
   - oidc: []
 tags:
+  - name: Session
+  - name: Patients
   - name: Protocols
   - name: Suggestions
   - name: Enrolment
@@ -33,6 +35,109 @@ tags:
   - name: Exports
 
 paths:
+  /me:
+    get:
+      tags: [Session]
+      operationId: getMe
+      summary: The signed-in user and the centres and roles they hold today (no centre headers)
+      x-roles: [any signed-in user]
+      responses:
+        '200':
+          description: User and memberships
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients:
+    parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Patients]
+      operationId: listPatients
+      summary: Patients registered at the acting centre; q matches local code prefix, mobile digits or name
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters:
+        - {name: q, in: query, schema: {type: string, minLength: 1, maxLength: 100}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: include_inactive, in: query, schema: {type: boolean, default: false}}
+      responses:
+        '200':
+          description: Newest registrations first, or by name when searching
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, has_more]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Patient'}}
+                  has_more: {type: boolean}
+                  limit: {type: integer}
+                  offset: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Patients]
+      operationId: registerPatient
+      summary: Register a patient at the acting centre (local code generated unless given)
+      description: |
+        Returns 409 POSSIBLE_DUPLICATE, with the candidates in `current`, when a patient at this centre has
+        the same mobile, ABHA number, or name and date of birth; resend with confirm_not_duplicate true.
+        The check never looks at other centres.
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewPatient'}
+      responses:
+        '201':
+          description: Registered
+          headers: {ETag: {$ref: '#/components/headers/ETag'}, Location: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Patient'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /patients/{patientId}:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Patients]
+      operationId: getPatient
+      summary: Registration and overview; enrolments and suggestions are null for roles that may not read them
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      responses:
+        '200':
+          description: Patient overview
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  patient: {$ref: '#/components/schemas/Patient'}
+                  consents: {type: array, items: {type: object}}
+                  allergies: {type: array, items: {type: object}}
+                  recent_encounters: {type: array, items: {type: object}}
+                  enrolments: {type: [array, 'null'], items: {type: object}}
+                  registry_suggestions: {type: [array, 'null'], items: {type: object}}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Patients]
+      operationId: updatePatient
+      summary: Change demographics; omitted fields keep their value
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PatientDemographics'}
+      responses:
+        '200':
+          description: Updated
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/Patient'}}}
+        default: {$ref: '#/components/responses/Problem'}
+
   /registries:
     get:
       tags: [Protocols]
@@ -1136,6 +1241,75 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
 
   schemas:
+    Me:
+      type: object
+      required: [user_id, full_name, centres]
+      properties:
+        user_id: {type: string, format: uuid}
+        full_name: {type: string}
+        email: {type: string}
+        platform_role: {type: [string, 'null']}
+        centres:
+          type: array
+          items:
+            type: object
+            properties:
+              centre_id: {type: string, format: uuid}
+              centre_name: {type: string}
+              centre_code: {type: string}
+              timezone: {type: string}
+              organisation_id: {type: string, format: uuid}
+              organisation_name: {type: string}
+              roles: {type: array, items: {type: string}}
+    PatientDemographics:
+      type: object
+      additionalProperties: false
+      properties:
+        first_name: {type: string, maxLength: 100}
+        middle_name: {type: [string, 'null']}
+        last_name: {type: [string, 'null']}
+        date_of_birth: {type: [string, 'null'], format: date}
+        dob_precision: {type: string, enum: [day, month, year, estimated_from_age]}
+        sex: {type: string, enum: [male, female, other, unknown]}
+        mobile: {type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$'}
+        alternate_mobile: {type: [string, 'null']}
+        email: {type: [string, 'null']}
+        address_line: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        district: {type: [string, 'null']}
+        state_code: {type: [string, 'null'], description: Two-letter Indian state or UT code}
+        pincode: {type: [string, 'null'], pattern: '^[1-9][0-9]{5}$'}
+        abha_number: {type: [string, 'null'], pattern: '^[0-9]{14}$'}
+        abha_address: {type: [string, 'null']}
+        emergency_contact_name: {type: [string, 'null']}
+        emergency_contact_relation: {type: [string, 'null']}
+        emergency_contact_phone: {type: [string, 'null']}
+        occupation: {type: [string, 'null']}
+        referral_source: {type: [string, 'null'], enum: [self, physician, cardiologist, hospital, camp, insurer, other, null]}
+        referral_detail: {type: [string, 'null']}
+        status: {type: string, enum: [active, inactive, transferred_out, deceased], description: PATCH only}
+    NewPatient:
+      allOf:
+        - {$ref: '#/components/schemas/PatientDemographics'}
+        - type: object
+          required: [first_name, sex]
+          properties:
+            age_years: {type: integer, minimum: 0, maximum: 120, description: Instead of date_of_birth; stored as estimated_from_age}
+            local_patient_code: {type: string, description: Centre's own MRN; generated as <CENTRE>-000123 when omitted}
+            confirm_not_duplicate: {type: boolean, default: false}
+    Patient:
+      allOf:
+        - {$ref: '#/components/schemas/PatientDemographics'}
+        - type: object
+          properties:
+            patient_id: {type: string, format: uuid}
+            registration_id: {type: string, format: uuid}
+            local_patient_code: {type: string}
+            display_name: {type: string}
+            age_years: {type: [integer, 'null']}
+            registration_date: {type: string, format: date}
+            linkage_status: {type: string}
+            row_version: {type: integer}
     Problem:
       type: object
       required: [type, title, status, code]

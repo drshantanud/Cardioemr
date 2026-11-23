@@ -57,7 +57,7 @@ PASS  no identifier columns in any research view
 PASS  PI sees HF assessment and event, with days from index
 PASS  event placed at day 7 after index
 PASS  PI cannot reach identifiable centre records
-PASS  requester cannot approve their own export (four-eyes) [23514: requester cannot decide their own export]
+PASS  requester cannot approve their own export (four-eyes) [23514: new row for relation "export_jobs" violates check constraint "export_jobs_check1"]
 --- 8. Cross-centre identity linkage without exposing identifiers
 PASS  centre B numbers its own patients
 PASS  match keys are not readable by any app role [42501: permission denied for table patient_match_keys]
@@ -184,4 +184,11 @@ PASS  completed export needs file, hash, row count and expiry [cemr:EXPORT_STATE
 PASS  every HINT tag raised by a function (0006 included) is in ref.api_error_map
 PASS  every mapped constraint or index still exists
 PASS  every endpoint definition is still draft, waiting for clinical sign-off
-Total: 166 passed, 0 failed (migrations 0001-0006, 2026-11-23)
+--- 19. Migration 0007: web app support
+PASS  memberships: Dr A is a clinician at PUN1 only
+PASS  memberships: unknown subject returns nothing
+PASS  memberships: platform admin with no centre role returns one row with no centre
+PASS  memberships: the login role itself cannot call it [42501: permission denied for schema app]
+PASS  generated local code skips a code already typed by hand
+PASS  duplicate local code maps to a 409
+Total: 172 passed, 0 failed (migrations 0001-0007, 2026-11-23)
