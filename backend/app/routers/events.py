@@ -213,7 +213,8 @@ def adjudicate(event_id: uuid.UUID, adjudication_id: uuid.UUID, body: Adjudicati
 
 @router.get("/protocols/{protocol_id}/adjudication-queue")
 def adjudication_queue(protocol_id: uuid.UUID,
-                       status: Literal["pending", "in_review", "insufficient_data"] = "pending",
+                       status: Literal["pending", "in_review", "insufficient_data", "adjudicated",
+                                       "not_an_event"] = "pending",
                        limit: int = Query(50, ge=1, le=200), cursor: str | None = None,
                        ctx: Ctx = Depends(QUEUE_READERS)):
     after_date, after_id = None, None
@@ -233,3 +234,11 @@ def adjudication_queue(protocol_id: uuid.UUID,
     rows = rows[:limit]
     return {"items": [adjudication_out(r) for r in rows],
             "next_cursor": f"{rows[-1]['event_date'].isoformat()}|{rows[-1]['adjudication_id']}" if more else None}
+
+
+@router.get("/adjudication-classifications")
+def list_classifications(ctx: Ctx = Depends(QUEUE_READERS)):
+    """Classification codes per system (BARC, ARC-2, UDMI-4, HF-ARC, custom), for the adjudication form."""
+    rows = ctx.all("SELECT classification_system, code, label FROM ref.adjudication_classifications "
+                   "ORDER BY classification_system, code")
+    return {"items": rows}

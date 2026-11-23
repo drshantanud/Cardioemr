@@ -6,6 +6,7 @@ import { AllergyForm } from "@/components/AllergyForm";
 import { DiagnosisForm, ROLE_LABELS } from "@/components/DiagnosisForm";
 import { ConsentForm, WithdrawConsent } from "@/components/ConsentForm";
 import { MedicationPanel } from "@/components/MedicationPanel";
+import { OutcomesPanel } from "@/components/OutcomesPanel";
 import { RegistryPanel } from "@/components/RegistryPanel";
 import { VitalsForm, vitalsLine } from "@/components/VitalsForm";
 import { ApiError, newIdempotencyKey } from "@/lib/api";
@@ -281,6 +282,7 @@ function Overview() {
               </ul>
             )}
           </Card>
+          <OutcomesPanel patientId={p.patient_id} />
           {enrolments !== null && (
             <Card title="Registries" flush>
               <RegistryPanel patientId={p.patient_id} enrolments={enrolments} registries={registries} onChanged={refreshAll} />

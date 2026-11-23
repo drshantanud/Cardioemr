@@ -328,3 +328,22 @@ table.gdmt .input { min-height: 30px; padding: 3px 6px; font-size: 0.85rem; }
   table.gdmt td::before { content: attr(data-label) ": "; color: var(--muted); font-size: 0.8rem; }
   table.gdmt td:first-child::before { content: none; }
 }
+
+/* --- PCI, events, adjudication --- */
+.lesion-card { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin: 0; min-width: 0; }
+.lesion-card legend { font-weight: 650; padding: 0 6px; }
+.lesion-remove { position: absolute; top: 10px; right: 14px; }
+.stent-row { border: 1px dashed var(--border-strong); background: var(--surface-2); border-radius: var(--radius); padding: 10px 12px; }
+.adj-filters { flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.adj-protocol { min-width: 260px; flex: 0 1 360px; }
+.adj-filters .segmented { flex-wrap: wrap; }
+.adj-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: start; }
+.adj-list li { padding: 0; }
+.adj-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: none; font: inherit; color: inherit; padding: 10px 16px; cursor: pointer; }
+.adj-item:hover { background: var(--surface-2); }
+.adj-list li[aria-current="true"] .adj-item { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--primary); }
+@media (max-width: 960px) {
+  .adj-layout { grid-template-columns: minmax(0, 1fr); }
+  .adj-protocol { min-width: 0; flex: 1 1 100%; }
+}

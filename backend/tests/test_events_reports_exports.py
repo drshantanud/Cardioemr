@@ -222,6 +222,16 @@ def test_mi_and_death_adjudicated(client, as_user):
                        headers={**as_user("pia"), "If-Match": f'"{a["row_version"]}"'},
                        json={"adjudication_status": "adjudicated", **body})
         assert r.status_code == 200 and r.json()["meets_endpoint"] is True, r.text
+    r = client.get(f"{API}/protocols/{S['cad']}/adjudication-queue?status=adjudicated", headers=as_user("pia"))
+    assert {i["endpoint_code"] for i in r.json()["items"] if i["event_id"] in (S["mi"], S["death"])} == {"MI", "CVD"}
+
+
+def test_classification_codes_for_the_form(client, as_user):
+    r = client.get(f"{API}/adjudication-classifications", headers=as_user("pia"))
+    assert r.status_code == 200
+    barc = [i["code"] for i in r.json()["items"] if i["classification_system"] == "BARC"]
+    assert "3a" in barc and "5b" in barc
+    assert client.get(f"{API}/adjudication-classifications", headers=as_user("nua")).status_code == 403
 
 
 def test_changed_event_reopens_adjudication(client, as_user):

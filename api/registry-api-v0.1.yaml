@@ -1361,7 +1361,10 @@ paths:
       operationId: adjudicationQueue
       x-roles: [principal_investigator, clinician, research_coordinator]
       parameters:
-        - {name: status, in: query, schema: {type: string, enum: [pending, in_review, insufficient_data], default: pending}}
+        - name: status
+          in: query
+          description: Waiting queues (pending, in_review, insufficient_data) or decided ones (adjudicated, not_an_event)
+          schema: {type: string, enum: [pending, in_review, insufficient_data, adjudicated, not_an_event], default: pending}
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
       responses:
@@ -1375,6 +1378,33 @@ paths:
                   - type: object
                     properties:
                       items: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /adjudication-classifications:
+    parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [Events]
+      operationId: listAdjudicationClassifications
+      summary: Classification codes per system (BARC, ARC-2, UDMI-4, HF-ARC, custom), for the adjudication form
+      x-roles: [principal_investigator, clinician, research_coordinator]
+      responses:
+        '200':
+          description: Codes, ordered by system and code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [classification_system, code, label]
+                      properties:
+                        classification_system: {type: string, examples: [UDMI-4]}
+                        code: {type: string, examples: ['1']}
+                        label: {type: string, examples: [Type 1 MI]}
         default: {$ref: '#/components/responses/Problem'}
 
   /protocols/{protocolId}/follow-up-due:

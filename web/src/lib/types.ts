@@ -525,3 +525,143 @@ export interface LipidTargets {
   guidelines: { rule_set_code: string; version: string; status: string; is_primary: boolean;
     categories: { risk_category: string; ldl_target_mg_dl: number; target_operator: string; min_pct_reduction: number | null }[] }[];
 }
+
+// --- CAD procedures, events and adjudication -------------------------------------
+
+export interface PciStent {
+  stent_id?: string;
+  sequence_number: number;
+  stent_device_id: string | null;
+  device_text: string | null;
+  diameter_mm: number;
+  length_mm: number;
+  deployment_atm: number | null;
+  post_dilatation_balloon_mm: number | null;
+}
+
+export interface PciLesion {
+  lesion_id?: string;
+  lesion_number: number;
+  vessel: string;
+  segment_code: string | null;
+  lesion_type_acc_aha: string | null;
+  lesion_length_mm: number | null;
+  reference_diameter_mm: number | null;
+  pre_stenosis_pct: number | null;
+  pre_timi_flow: number | null;
+  calcification: string | null;
+  is_cto: boolean;
+  j_cto_score: number | null;
+  is_bifurcation: boolean;
+  medina: string | null;
+  bifurcation_technique: string | null;
+  is_in_stent_restenosis: boolean;
+  thrombus: boolean | null;
+  lesion_preparation: string[] | null;
+  post_dilatation: boolean | null;
+  pre_physiology_value: number | null;
+  post_physiology_value: number | null;
+  final_timi_flow: number | null;
+  residual_stenosis_pct: number | null;
+  treatment: string;
+  stents: PciStent[];
+}
+
+export interface PciProcedure {
+  procedure_id: string;
+  patient_id: string;
+  encounter_id: string | null;
+  angiogram_investigation_id: string | null;
+  procedure_date: string;
+  performed_at_facility: string | null;
+  indication: string;
+  urgency: string | null;
+  access_site: string | null;
+  operator_name: string | null;
+  imaging_guidance: string;
+  physiology: string;
+  mechanical_support: string | null;
+  contrast_ml: number | null;
+  fluoroscopy_min: number | null;
+  procedural_success: boolean | null;
+  complications: string[] | null;
+  source: string;
+  source_document_id: string | null;
+  status: "draft" | "final" | "entered_in_error";
+  row_version: number;
+  lesions: PciLesion[];
+}
+
+export interface ClinicalEvent {
+  event_id: string;
+  patient_id: string;
+  event_type: string;
+  event_date: string;
+  event_date_precision: "day" | "month" | "year";
+  is_historical: boolean;
+  description: string | null;
+  hospitalised: boolean | null;
+  admission_date: string | null;
+  discharge_date: string | null;
+  facility_name: string | null;
+  severity: string | null;
+  outcome: string | null;
+  death_cause: string | null;
+  death_cv_mode: string | null;
+  mi_type: string | null;
+  stroke_type: string | null;
+  bleeding_site: string | null;
+  pci_procedure_id: string | null;
+  target_lesion_id: string | null;
+  potassium_mmol_l: number | null;
+  creatinine_result_id: string | null;
+  source: string;
+  source_document_id: string | null;
+  reported_by: string;
+  status: "reported" | "source_verified" | "entered_in_error";
+  created_at: string;
+  row_version: number;
+}
+
+export interface Adjudication {
+  adjudication_id: string;
+  event_id: string;
+  protocol_code: string;
+  endpoint_code: string | null;
+  endpoint_label: string | null;
+  classification_system: string | null;
+  qualifying_classifications: string[] | null;
+  event_type: string;
+  event_date: string;
+  event_day: number | null;
+  adjudication_status: "pending" | "in_review" | "adjudicated" | "not_an_event" | "insufficient_data" | "event_withdrawn";
+  classification: string | null;
+  meets_endpoint: boolean | null;
+  adjudicated_by: string | null;
+  adjudicated_at: string | null;
+  committee_reference: string | null;
+  notes: string | null;
+  centre_code: string;
+  study_subject_code: string | null;
+  patient_id: string | null;
+  row_version: number;
+  event: {
+    event_date_precision: string; description: string | null; hospitalised: boolean | null;
+    admission_date: string | null; discharge_date: string | null; facility_name: string | null;
+    severity: string | null; outcome: string | null; death_cause: string | null; death_cv_mode: string | null;
+    mi_type: string | null; stroke_type: string | null; bleeding_site: string | null;
+    pci_procedure_id: string | null; target_lesion_id: string | null; source: string; event_status: string;
+    reported_by: string; reported_at: string;
+  };
+}
+
+export interface EventWithAdjudications {
+  event: ClinicalEvent;
+  adjudications: Adjudication[];
+}
+
+export interface Classification {
+  classification_system: string;
+  code: string;
+  label: string;
+}
