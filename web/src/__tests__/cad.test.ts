@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  decides, eventAsks, eventBody, eventDate, lesionLine, newEvent, newLesion, newPci, pciBody, pciDraftOf, validateEvent, validatePci,
+  decides, eventAsks, stentDetail, stentLine, stentOptionLabel, eventBody, eventDate, lesionLine, newEvent, newLesion, newPci, pciBody, pciDraftOf, validateEvent, validatePci,
 } from "@/lib/cad";
-import type { PciProcedure } from "@/lib/types";
+import type { PciProcedure, StentDevice } from "@/lib/types";
 
 const TODAY = "2026-11-23";
 
@@ -11,7 +11,7 @@ function filledPci() {
   d.indication = "chronic_coronary_syndrome";
   const l = d.lesions[0];
   Object.assign(l, { vessel: "LAD", segment_code: "6", pre_stenosis_pct: "90", residual_stenosis_pct: "0", final_timi_flow: "3" });
-  Object.assign(l.stents[0], { device_text: "Xience Sierra", diameter_mm: "3.0", length_mm: "28", deployment_atm: "14" });
+  Object.assign(l.stents[0], { device_other: true, device_text: "Xience Sierra", diameter_mm: "3.0", length_mm: "28", deployment_atm: "14" });
   return d;
 }
 
@@ -63,6 +63,43 @@ describe("PCI drafts", () => {
     expect(d.lesions[0].lesion_id).toBe("l1");
     expect(d.lesions[0].stents[0]).toMatchObject({ stent_id: "s1", diameter_mm: "3" });
     expect(lesionLine(saved.lesions[0])).toBe("LAD (6) · 90% → 0% · 1 stent");
+  });
+});
+
+describe("stent catalogue", () => {
+  const orsiro: StentDevice = {
+    stent_device_id: "dev-orsiro", manufacturer: "Biotronik", platform_name: "Orsiro", display_name: "Orsiro (Biotronik)",
+    device_type: "DES", drug: "sirolimus", strut_material: "cobalt-chromium", polymer_type: "biodegradable", polymer: "PLLA",
+    strut_thickness_min_um: 60, strut_thickness_max_um: 80, aliases: [], review_status: "pending_clinical_review", status: "active",
+  };
+
+  it("asks to choose a catalogue stent, or to type one marked other", () => {
+    const d = filledPci();
+    Object.assign(d.lesions[0].stents[0], { device_other: false, device_text: "" });
+    expect(validatePci(d, TODAY)["lesion.1.stent.1.device_text"]).toBe("Choose the stent");
+    Object.assign(d.lesions[0].stents[0], { device_other: true });
+    expect(validatePci(d, TODAY)["lesion.1.stent.1.device_text"]).toBe("Type the make and model");
+  });
+
+  it("sends the catalogue id without typed text, and typed text without an id", () => {
+    const d = filledPci();
+    Object.assign(d.lesions[0].stents[0], { device_other: false, stent_device_id: "dev-orsiro", device_text: "left over" });
+    let s = (pciBody(d) as { lesions: { stents: Record<string, unknown>[] }[] }).lesions[0].stents[0];
+    expect(s).toMatchObject({ stent_device_id: "dev-orsiro", device_text: null });
+    Object.assign(d.lesions[0].stents[0], { device_other: true, device_text: "Yukon Choice PC" });
+    s = (pciBody(d) as { lesions: { stents: Record<string, unknown>[] }[] }).lesions[0].stents[0];
+    expect(s).toMatchObject({ stent_device_id: null, device_text: "Yukon Choice PC" });
+  });
+
+  it("labels devices in the picker and on the summary", () => {
+    expect(stentOptionLabel(orsiro)).toBe("Orsiro (Biotronik)");
+    expect(stentDetail(orsiro)).toBe("sirolimus · biodegradable polymer · 60–80 µm struts");
+    expect(stentDetail({ ...orsiro, strut_thickness_max_um: 60 })).toMatch(/· 60 µm struts$/);
+    expect(stentOptionLabel({ ...orsiro, status: "retired" })).toMatch(/\(retired\)$/);
+    const saved = { sequence_number: 1, stent_device_id: "dev-orsiro", device_text: null, device_name: "Orsiro (Biotronik)",
+      diameter_mm: 3, length_mm: 30, deployment_atm: null, post_dilatation_balloon_mm: null };
+    expect(stentLine(saved)).toBe("Orsiro (Biotronik) 3 × 30 mm");
+    expect(pciDraftOf({ ...(pciBody(filledPci()) as unknown as PciProcedure), lesions: [] }).lesions).toEqual([]);
   });
 });
 

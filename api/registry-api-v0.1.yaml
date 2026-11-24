@@ -1383,6 +1383,28 @@ paths:
                       items: {type: array, items: {$ref: '#/components/schemas/Adjudication'}}
         default: {$ref: '#/components/responses/Problem'}
 
+  /stent-devices:
+    parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    get:
+      tags: [CAD]
+      operationId: listStentDevices
+      summary: The stent catalogue for PCI entry; a stent not in it is recorded by device_text
+      x-roles: [clinician, research_coordinator, principal_investigator, nurse]
+      parameters:
+        - {name: include_retired, in: query, schema: {type: boolean, default: false},
+           description: Also list retired devices, to label older records}
+      responses:
+        '200':
+          description: Devices in picker order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/StentDevice'}}
+        default: {$ref: '#/components/responses/Problem'}
+
   /adjudication-classifications:
     parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
     get:
@@ -2689,6 +2711,25 @@ components:
         target_met: {type: [boolean, 'null']}
         calculated_at: {type: string, format: date-time}
 
+    StentDevice:
+      type: object
+      required: [stent_device_id, manufacturer, platform_name, display_name, device_type, review_status, status]
+      properties:
+        stent_device_id: {type: string, format: uuid}
+        manufacturer: {type: string, examples: [Biotronik]}
+        platform_name: {type: string, examples: [Orsiro]}
+        display_name: {type: string, examples: [Orsiro (Biotronik)]}
+        device_type: {type: string, enum: [DES, BMS, BVS, DCB, covered]}
+        drug: {type: [string, 'null'], examples: [sirolimus]}
+        strut_material: {type: [string, 'null']}
+        polymer_type: {type: [string, 'null'], enum: [durable, biodegradable, polymer_free, null]}
+        polymer: {type: [string, 'null']}
+        strut_thickness_min_um: {type: [number, 'null']}
+        strut_thickness_max_um: {type: [number, 'null']}
+        aliases: {type: array, items: {type: string}}
+        review_status: {type: string, enum: [pending_clinical_review, verified]}
+        status: {type: string, enum: [active, retired]}
+
     PciStent:
       type: object
       required: [sequence_number, diameter_mm, length_mm]
@@ -2700,6 +2741,14 @@ components:
         length_mm: {type: number, minimum: 6, maximum: 60}
         deployment_atm: {type: integer, minimum: 4, maximum: 30}
         post_dilatation_balloon_mm: {type: number}
+        device_name:
+          type: [string, 'null']
+          readOnly: true
+          description: Catalogue name, e.g. "Orsiro (Biotronik)"; null for a typed device_text
+        device_type: {type: [string, 'null'], readOnly: true}
+      description: >-
+        Give stent_device_id for a stent in the catalogue (GET /stent-devices), or device_text for one that
+        is not. A retired device is refused on a new stent (422 STENT_RETIRED); an unknown id is 422 STENT_UNKNOWN.
 
     PciLesion:
       type: object

@@ -1,8 +1,9 @@
 "use client";
 import type { ReactNode } from "react";
 import {
-  label, newLesion, newStent, PCI_OPTIONS, type LesionDraft, type PciDraft, type PciErrors, type StentDraft,
+  label, newLesion, newStent, PCI_OPTIONS, stentDetail, stentOptionLabel, type LesionDraft, type PciDraft, type PciErrors, type StentDraft,
 } from "@/lib/cad";
+import type { StentDevice } from "@/lib/types";
 import { Field } from "./ui";
 
 type Opt = [string, string][];
@@ -65,12 +66,16 @@ function Check({ checked, onChange, children }: { checked: boolean; onChange: (v
   );
 }
 
-function StentRow({ lesion, s, set, remove, errors, locked }: {
+const OTHER = "__other__";
+
+function StentRow({ lesion, s, set, remove, errors, locked, catalogue }: {
   lesion: number; s: StentDraft; set: (s: StentDraft) => void; remove?: () => void; errors: PciErrors; locked: boolean;
+  catalogue: StentDevice[];
 }) {
   const k = `lesion.${lesion}.stent.${s.sequence_number}`;
   const id = `l${lesion}-s${s.sequence_number}`;
   const up = <K extends keyof StentDraft>(f: K) => (v: StentDraft[K]) => set({ ...s, [f]: v });
+  const chosen = s.device_other ? undefined : catalogue.find((d) => d.stent_device_id === s.stent_device_id);
   return (
     <div className="stent-row">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -78,11 +83,29 @@ function StentRow({ lesion, s, set, remove, errors, locked }: {
         {remove && !locked && <button type="button" className="link-button small" onClick={remove}>Remove stent</button>}
       </div>
       <div className="form-grid">
-        <Field label="Make and model" htmlFor={`${id}-dev`} required error={errors[`${k}.device_text`]} className="span-3"
-          hint={s.stent_id ? undefined : "e.g. Xience Sierra"}>
-          <input id={`${id}-dev`} className="input" value={s.device_text} onChange={(e) => up("device_text")(e.target.value)}
-            aria-invalid={errors[`${k}.device_text`] ? true : undefined} />
+        <Field label="Stent" htmlFor={`${id}-dev`} required error={s.device_other ? undefined : errors[`${k}.device_text`]}
+          className="span-3" hint={chosen ? stentDetail(chosen) : undefined}>
+          <select id={`${id}-dev`} className="input" value={s.device_other ? OTHER : s.stent_device_id ?? ""}
+            aria-invalid={!s.device_other && errors[`${k}.device_text`] ? true : undefined}
+            onChange={(e) => {
+              const v = e.target.value;
+              set(v === OTHER ? { ...s, device_other: true, stent_device_id: null }
+                : { ...s, device_other: false, stent_device_id: v || null, device_text: "" });
+            }}>
+            <option value="">Choose…</option>
+            {catalogue.filter((d) => d.status === "active" || d.stent_device_id === s.stent_device_id).map((d) => (
+              <option key={d.stent_device_id} value={d.stent_device_id}>{stentOptionLabel(d)}</option>
+            ))}
+            <option value={OTHER}>Other, not in the list…</option>
+          </select>
         </Field>
+        {s.device_other && (
+          <Field label="Make and model" htmlFor={`${id}-devtxt`} required error={errors[`${k}.device_text`]} className="span-3"
+            hint="As printed on the stent box">
+            <input id={`${id}-devtxt`} className="input" value={s.device_text} onChange={(e) => up("device_text")(e.target.value)}
+              aria-invalid={errors[`${k}.device_text`] ? true : undefined} />
+          </Field>
+        )}
         <Num id={`${id}-dia`} labelText="Diameter" unit="mm" required value={s.diameter_mm} onChange={up("diameter_mm")} error={errors[`${k}.diameter_mm`]} />
         <Num id={`${id}-len`} labelText="Length" unit="mm" required value={s.length_mm} onChange={up("length_mm")} error={errors[`${k}.length_mm`]} />
         <Num id={`${id}-atm`} labelText="Pressure" unit="atm" value={s.deployment_atm} onChange={up("deployment_atm")} error={errors[`${k}.deployment_atm`]} />
@@ -93,8 +116,9 @@ function StentRow({ lesion, s, set, remove, errors, locked }: {
   );
 }
 
-function LesionCard({ l, set, remove, errors, locked }: {
+function LesionCard({ l, set, remove, errors, locked, catalogue }: {
   l: LesionDraft; set: (l: LesionDraft) => void; remove?: () => void; errors: PciErrors; locked: boolean;
+  catalogue: StentDevice[];
 }) {
   const k = `lesion.${l.lesion_number}`;
   const id = `l${l.lesion_number}`;
@@ -155,7 +179,7 @@ function LesionCard({ l, set, remove, errors, locked }: {
         <div className="stack" style={{ gap: 8, marginTop: 12 }}>
           {errors[`${k}.stents`] && <span className="err small">{errors[`${k}.stents`]}</span>}
           {l.stents.map((s, i) => (
-            <StentRow key={s.sequence_number} lesion={l.lesion_number} s={s} errors={errors} locked={locked}
+            <StentRow key={s.sequence_number} lesion={l.lesion_number} s={s} errors={errors} locked={locked} catalogue={catalogue}
               set={(x) => set({ ...l, stents: l.stents.map((y, j) => (j === i ? x : y)) })}
               remove={!s.stent_id && l.stents.length > 1 ? () => set({ ...l, stents: l.stents.filter((_, j) => j !== i) }) : undefined} />
           ))}
@@ -174,8 +198,10 @@ function LesionCard({ l, set, remove, errors, locked }: {
 
 /** The whole PCI document: procedure, then each lesion with its stents. Saved lesions and stents
  * cannot be removed (the API refuses); a wrong procedure is marked entered in error instead. */
-export function PciForm({ draft, set, errors, today, locked = false }: {
+export function PciForm({ draft, set, errors, today, locked = false, catalogue = [] }: {
   draft: PciDraft; set: (d: PciDraft) => void; errors: PciErrors; today: string; locked?: boolean;
+  /** The stent catalogue (GET /stent-devices?include_retired=true); retired devices show only on stents that name them. */
+  catalogue?: StentDevice[];
 }) {
   const up = <K extends keyof PciDraft>(f: K) => (v: PciDraft[K]) => set({ ...draft, [f]: v });
   const nextLesion = Math.max(0, ...draft.lesions.map((l) => l.lesion_number)) + 1;
@@ -216,7 +242,7 @@ export function PciForm({ draft, set, errors, today, locked = false }: {
         {errors.lesions && <span className="err small">{errors.lesions}</span>}
         <div className="stack">
           {draft.lesions.map((l, i) => (
-            <LesionCard key={l.lesion_number} l={l} errors={errors} locked={locked}
+            <LesionCard key={l.lesion_number} l={l} errors={errors} locked={locked} catalogue={catalogue}
               set={(x) => set({ ...draft, lesions: draft.lesions.map((y, j) => (j === i ? x : y)) })}
               remove={!l.lesion_id && draft.lesions.length > 1 ? () => set({ ...draft, lesions: draft.lesions.filter((_, j) => j !== i) }) : undefined} />
           ))}

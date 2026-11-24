@@ -57,7 +57,7 @@ PASS  no identifier columns in any research view
 PASS  PI sees HF assessment and event, with days from index
 PASS  event placed at day 7 after index
 PASS  PI cannot reach identifiable centre records
-PASS  requester cannot approve their own export (four-eyes) [23514: new row for relation "export_jobs" violates check constraint "export_jobs_check1"]
+PASS  requester cannot approve their own export (four-eyes) [23514: requester cannot decide their own export]
 --- 8. Cross-centre identity linkage without exposing identifiers
 PASS  centre B numbers its own patients
 PASS  match keys are not readable by any app role [42501: permission denied for table patient_match_keys]
@@ -204,4 +204,16 @@ PASS  a nurse lists the protocols active at the centre
 PASS  a nurse still cannot read protocols [42501: permission denied for table registry_protocols]
 PASS  a nurse cannot list another centre's protocols [42501: no active centre]
 PASS  assistants cannot list protocols [42501: permission denied for function centre_protocols]
-Total: 183 passed, 0 failed (migrations 0001-0009, 2026-11-24)
+--- 22. Migration 0010: stent catalogue
+PASS  the nine requested stents are in the catalogue
+PASS  every seeded stent has its drug, polymer kind and strut thickness
+PASS  every seeded stent waits for clinical review
+PASS  a DES needs its drug [23514: new row for relation "stent_devices" violates check constraint "stent_devices_des_drug"]
+PASS  a clinician reads the catalogue
+PASS  stents are recorded from the catalogue and as typed text
+PASS  a clinician cannot add to the catalogue [42501: permission denied for table stent_devices]
+PASS  a stent that names a retired device can still be edited
+PASS  a retired device cannot go on a new stent [23514: this stent is retired from the catalogue; pick another or type the make and model]
+PASS  an unknown device is refused [23503: insert or update on table "pci_stents" violates foreign key constraint "pci_stents_stent_device_id_fkey"]
+PASS  stent errors are mapped
+Total: 194 passed, 0 failed (migrations 0001-0010, 2026-11-24)
