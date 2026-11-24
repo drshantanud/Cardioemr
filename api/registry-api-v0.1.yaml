@@ -528,6 +528,9 @@ paths:
       tags: [Protocols]
       operationId: listRegistries
       summary: Registry types and the protocol versions active at the acting centre
+      description: |
+        Nurses get only the protocols with an active site at their centre, and only their names and status
+        (registry.centre_protocols, migration 0009), so they can choose one for the follow-up report.
       x-roles: [clinician, research_coordinator, principal_investigator, nurse, platform_admin]
       parameters: [{$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
       responses:
@@ -1479,6 +1482,21 @@ paths:
                       mandatory_values: {type: integer}
                       missing: {type: integer}
                       completeness_pct: {type: [number, 'null']}
+                  by_assessment:
+                    type: array
+                    description: Visits at this centre with required values still empty, most missing first (at most 200)
+                    items:
+                      type: object
+                      properties:
+                        assessment_id: {type: string, format: uuid}
+                        enrolment_id: {type: string, format: uuid}
+                        patient_id: {type: string, format: uuid}
+                        local_patient_code: {type: [string, 'null']}
+                        visit_code: {type: string}
+                        assessment_date: {type: string, format: date}
+                        completion_status: {type: string}
+                        missing: {type: integer}
+                        mandatory_values: {type: integer}
         default: {$ref: '#/components/responses/Problem'}
 
   /exports:

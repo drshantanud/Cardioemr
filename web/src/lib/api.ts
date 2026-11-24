@@ -119,6 +119,27 @@ export async function call<T>(ctx: ApiContext, path: string, opts: CallOptions =
   return { data, etag: res.headers.get("ETag") };
 }
 
+/** Fetches a file (e.g. an export) and returns it with the name the server gave it. */
+export async function callFile(ctx: ApiContext, path: string): Promise<{ blob: Blob; filename: string | null; sha256: string | null }> {
+  let res: Response;
+  try {
+    const h = buildHeaders(ctx, {});
+    h.set("Accept", "*/*");
+    res = await fetch(`${API_BASE}${path}`, { headers: h, cache: "no-store", credentials: "omit" });
+  } catch {
+    throw new ApiError(0, "NETWORK", "Network error");
+  }
+  if (!res.ok) throw await parseProblem(res);
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  return { blob: await res.blob(), filename: /filename="([^"]+)"/.exec(cd)?.[1] ?? null, sha256: res.headers.get("X-Content-SHA256") };
+}
+
+/** The API path of an absolute or relative link the API returned (the part after /api/v1). */
+export function apiPathOf(url: string): string {
+  const i = url.indexOf(API_BASE);
+  return i >= 0 ? url.slice(i + API_BASE.length) : url;
+}
+
 export function newIdempotencyKey(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }

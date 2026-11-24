@@ -59,7 +59,12 @@ def test_registries_for_clinician_and_nurse(client, as_user):
     state["hf_protocol"] = hf["protocol_id"]
     state["cad_protocol"] = regs["CAD"]["protocols"][0]["protocol_id"]
     r = client.get(f"{API}/registries", headers=as_user("nua"))
-    assert r.status_code == 200 and all(x["protocols"] == [] for x in r.json()["items"])
+    assert r.status_code == 200
+    # nurses get only the names of protocols active at their centre, for the follow-up report
+    nurse = {x["registry_code"]: x["protocols"] for x in r.json()["items"]}
+    assert [p["protocol_code"] for p in nurse["HF"]] == ["CEMR-HF"]
+    assert set(nurse["HF"][0]) == {"protocol_id", "protocol_code", "protocol_version", "status", "site_status"}
+    assert client.get(f"{API}/protocols/{state['hf_protocol']}", headers=as_user("nua")).status_code == 403
 
 
 def test_protocol_and_dictionary(client, as_user):

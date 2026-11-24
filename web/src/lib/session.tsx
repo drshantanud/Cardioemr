@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ApiError, call, type ApiResult, type CallOptions } from "./api";
+import { ApiError, call, callFile, type ApiResult, type CallOptions } from "./api";
 import { currentUser, signIn, signOut, userManager } from "./auth";
 import { isValidSelection, loadSelection, membershipFor, onlyChoice, saveSelection, type Selection } from "./selection";
 import type { Me, Membership } from "./types";
@@ -20,6 +20,8 @@ export interface Session {
   signOut(): Promise<void>;
   /** Calls the API as the selected centre and role. */
   api<T>(path: string, opts?: CallOptions): Promise<ApiResult<T>>;
+  /** Downloads a file from the API as the selected centre and role. */
+  download(path: string): Promise<{ blob: Blob; filename: string | null; sha256: string | null }>;
 }
 
 const SessionContext = createContext<Session | null>(null);
@@ -113,16 +115,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [selection, load],
   );
 
+  const download = useCallback(async (path: string) => {
+    if (!token.current) {
+      setStatus("signed_out");
+      throw new ApiError(401, "UNAUTHENTICATED", "Please sign in again");
+    }
+    return callFile({ token: token.current, centreId: selection?.centreId, role: selection?.role }, path);
+  }, [selection]);
+
   const value = useMemo<Session>(
     () => ({
-      status, me, selection, membership: membershipFor(me, selection), error, select, changeCentre, api,
+      status, me, selection, membership: membershipFor(me, selection), error, select, changeCentre, api, download,
       signIn: (returnTo?: string) => signIn(returnTo),
       signOut: async () => {
         saveSelection(null);
         await signOut();
       },
     }),
-    [status, me, selection, error, select, changeCentre, api],
+    [status, me, selection, error, select, changeCentre, api, download],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

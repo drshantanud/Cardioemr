@@ -191,15 +191,11 @@ ul.plain li:last-child { border-bottom: 0; }
   cursor: pointer; }
 .choice:hover { border-color: var(--primary); background: var(--primary-soft); }
 
-/* ---------- tablet ---------- */
-@media (max-width: 960px) {
-  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .user-name { display: none; }
-}
+.shell-nav a { white-space: nowrap; }
+@media (max-width: 1240px) { .user-name { display: none; } }
 
-/* ---------- phone ---------- */
-@media (max-width: 720px) {
-  body { font-size: 16px; }
+/* ---------- narrow screens: the menu moves into a drawer once the nav no longer fits ---------- */
+@media (max-width: 1100px) {
   .shell-nav, .shell-right { display: none; }
   .shell-header .menu-button { display: inline-flex; margin-left: auto; }
   .mobile-drawer[data-open="true"] {
@@ -209,6 +205,17 @@ ul.plain li:last-child { border-bottom: 0; }
   .mobile-drawer a { padding: 12px 8px; color: var(--text); font-weight: 550; border-radius: 6px; }
   .mobile-drawer a[aria-current="page"] { color: var(--primary); background: var(--primary-soft); }
   .mobile-drawer .context-chip { max-width: none; width: 100%; margin-top: 8px; }
+}
+
+/* ---------- tablet ---------- */
+@media (max-width: 960px) {
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .user-name { display: none; }
+}
+
+/* ---------- phone ---------- */
+@media (max-width: 720px) {
+  body { font-size: 16px; }
   .page { padding: 16px var(--gutter) 40px; }
   .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -346,4 +353,30 @@ table.gdmt .input { min-height: 30px; padding: 3px 6px; font-size: 0.85rem; }
 @media (max-width: 960px) {
   .adj-layout { grid-template-columns: minmax(0, 1fr); }
   .adj-protocol { min-width: 0; flex: 1 1 100%; }
+}
+
+/* --- Reports and exports --- */
+.report-filters { flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.report-protocol { min-width: 260px; flex: 0 1 360px; }
+.report-visit { min-width: 180px; flex: 0 1 220px; }
+.report-filters .segmented { flex-wrap: wrap; }
+.stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; }
+.stat-value { font-size: 1.6rem; font-weight: 700; }
+.stat-label { color: var(--muted); font-size: 0.85rem; }
+.plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.plain-fieldset legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
+.radio-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; }
+.radio-card:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.radio-card input { margin-top: 4px; }
+.var-picker { border: 1px solid var(--border); border-radius: var(--radius); max-height: 420px; overflow: auto; margin-top: 8px; }
+.var-group + .var-group { border-top: 1px solid var(--border); }
+.var-group summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-weight: 600; }
+.var-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0 12px; padding: 0 12px 10px; }
+.export-list li.export-job { display: block; }
+.export-job > * + * { margin-top: 8px; }
+@media (max-width: 720px) {
+  .report-protocol, .report-visit { min-width: 0; flex: 1 1 100%; }
+  .stat-row { grid-template-columns: minmax(0, 1fr); }
+  .var-options { grid-template-columns: minmax(0, 1fr); }
 }

@@ -665,3 +665,100 @@ export interface Classification {
   code: string;
   label: string;
 }
+
+// --- Reports and exports ------------------------------------------------------------
+
+export interface FollowUpItem {
+  visit_code: string;
+  visit_label: string | null;
+  occurrence: number;
+  target_date: string;
+  window_opens: string;
+  window_closes: string;
+  status: "due" | "not_due" | "overdue";
+  assessment_id: string | null;
+  enrolment_id: string;
+  patient_id: string;
+  local_patient_code: string;
+  patient_name: string;
+  mobile: string | null;
+  death_reported_on: string | null;
+  days_until_window_closes: number;
+}
+
+export interface FollowUpReport {
+  as_of: string;
+  within_days: number;
+  counts: { due: number; not_due: number; overdue: number };
+  items: FollowUpItem[];
+}
+
+export interface MissingVariable {
+  visit_code: string;
+  variable_code: string;
+  variable_label: string;
+  assessments_due: number;
+  missing: number;
+  recorded_as_not_available: number;
+  queried: number;
+  assessment_ids: string[];
+}
+
+export interface MissingVisit {
+  assessment_id: string;
+  enrolment_id: string;
+  patient_id: string;
+  local_patient_code: string | null;
+  visit_code: string;
+  assessment_date: string;
+  completion_status: string;
+  missing: number;
+  mandatory_values: number;
+}
+
+export interface MissingDataReport {
+  totals: { assessments: number; mandatory_values: number; missing: number; completeness_pct: number | null };
+  items: MissingVariable[];
+  by_assessment: MissingVisit[];
+}
+
+export type ExportStatus = "requested" | "approved" | "rejected" | "running" | "completed" | "failed" | "expired";
+
+export interface ExportJob {
+  export_id: string;
+  protocol_id: string;
+  purpose: string;
+  centre_ids: string[] | null;
+  cohort_filter: { enrolment_status?: string[]; index_year_from?: number; index_year_to?: number };
+  visit_codes: string[] | null;
+  variable_codes: string[];
+  deidentification: "pseudonymised_relative_days" | "pseudonymised_year_only" | "aggregate_only";
+  file_format: "csv" | "xlsx" | "spss_csv" | "r_csv" | "stata_csv";
+  include_data_dictionary: boolean;
+  requested_by: string;
+  requested_role: string;
+  requested_at: string;
+  status: ExportStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  decision_note: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failure_reason: string | null;
+  row_count: number | null;
+  file_sha256: string | null;
+  expires_at: string | null;
+  manifest: Record<string, unknown> | null;
+  row_version: number;
+  download_url: string | null;
+}
+
+
+export interface DictionaryItem {
+  variable_code: string;
+  category: string | null;
+  variable_label: string;
+  data_type: string;
+  visit_code: string;
+  requirement: string;
+}

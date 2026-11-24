@@ -17,10 +17,16 @@ CONFIG_READERS = roles("clinician", "research_coordinator", "principal_investiga
 
 @router.get("/registries")
 def list_registries(ctx: Ctx = Depends(READERS)):
-    if ctx.role == "nurse":   # nurses see registry names only (no grant on protocols)
+    if ctx.role == "nurse":
+        # Nurses have no grant on protocols; they get the names of those active at their centre
+        # (migration 0009), enough to pick one for the follow-up report.
         rows = ctx.all("SELECT registry_code, registry_name FROM registry.registry_types WHERE status = 'active' "
                        "ORDER BY registry_code")
-        return {"items": [dict(r, protocols=[]) for r in rows]}
+        active = ctx.all("SELECT * FROM registry.centre_protocols()")
+        return {"items": [dict(r, protocols=[{k: p[k] for k in ("protocol_id", "protocol_code", "protocol_version",
+                                                                  "status", "site_status")}
+                                             for p in active if p["registry_code"] == r["registry_code"]])
+                          for r in rows]}
     rows = ctx.all("""
         SELECT rt.registry_code, rt.registry_name, p.protocol_id, p.protocol_code, p.protocol_version, p.status,
                ps.site_status
