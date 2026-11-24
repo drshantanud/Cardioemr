@@ -68,6 +68,8 @@ def get_protocol(protocol_id: uuid.UUID, response: Response, ctx: Ctx = Depends(
             "protocol_version": p["protocol_version"], "registry_code": p["registry_code"],
             "title": p["protocol_title"], "status": p["status"],
             "requires_research_consent": p["requires_research_consent"],
+            "inclusion_text": p["inclusion_text"], "exclusion_text": p["exclusion_text"],
+            "inclusion_rules": p["inclusion_rules"], "exclusion_rules": p["exclusion_rules"],
             "visits": visits, "endpoints": endpoints, "rule_sets": rule_sets, "row_version": p["row_version"]}
 
 

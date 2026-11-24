@@ -29,7 +29,8 @@ const REGISTRY: Role[] = ["clinician", "research_coordinator", "principal_invest
 export type Capability =
   | "patients.read" | "patients.register" | "patients.edit" | "registry.read"
   | "consult.start" | "consult.edit" | "consult.sign" | "meds.prescribe" | "vitals.record" | "diagnosis.write"
-  | "allergy.write";
+  | "allergy.write" | "consent.record" | "consent.research" | "registry.screen" | "registry.enrol"
+  | "registry.assess" | "registry.lock" | "registry.unlock" | "suggestion.read";
 
 const CAPABILITIES: Record<Capability, Role[]> = {
   "patients.read": FRONT_DESK,
@@ -43,6 +44,14 @@ const CAPABILITIES: Record<Capability, Role[]> = {
   "vitals.record": ["assistant", "nurse", "clinician"],
   "diagnosis.write": ["clinician", "nurse"],
   "allergy.write": ["assistant", "nurse", "clinician"],
+  "consent.record": FRONT_DESK,
+  "consent.research": REGISTRY,
+  "suggestion.read": [...REGISTRY, "nurse"],
+  "registry.screen": REGISTRY,
+  "registry.enrol": ["clinician", "principal_investigator"],
+  "registry.assess": REGISTRY,
+  "registry.lock": ["research_coordinator", "principal_investigator"],
+  "registry.unlock": ["principal_investigator"],
 };
 
 export function can(role: string | undefined, capability: Capability): boolean {

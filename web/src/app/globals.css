@@ -290,3 +290,41 @@ ol.history { margin: 8px 0 0; padding-left: 18px; font-size: 0.85rem; display: f
   .consult-actions > span { width: 100%; }
   .med-actions { width: 100%; }
 }
+
+/* ---------- registries ---------- */
+.criteria li { flex-wrap: wrap; }
+.criteria .badge { margin-right: 6px; }
+.schedule li[data-status="overdue"] { background: var(--danger-soft); }
+.schedule li[data-status="due"] { background: var(--warn-soft); }
+.text-danger { color: var(--danger); }
+.var-list li.var-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr) minmax(150px, 0.9fr); gap: 8px 16px;
+  align-items: center; justify-content: stretch; }
+.missing-tag { color: var(--danger); font-size: 0.78rem; margin-left: 6px; }
+.var-label label { font-weight: 600; font-size: 0.92rem; }
+.var-input { min-width: 0; }
+.var-input .chips { gap: 4px; }
+.var-meta { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+select.status-select { width: 128px; flex: none; min-height: 30px; padding: 2px 6px; font-size: 0.8rem; }
+.var-query { grid-column: 1 / -1; }
+.consult-aside-plain { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: calc(var(--header-h) + 110px); align-self: start; }
+.consult-aside-plain:empty { display: none; }
+.consult-layout:has(.consult-aside-plain:empty) { grid-template-columns: minmax(0, 1fr); }
+.consult-layout:has(.consult-aside-plain) { grid-template-columns: minmax(0, 1fr) 380px; }
+table.gdmt td { vertical-align: top; }
+table.gdmt tbody tr { cursor: default; }
+table.gdmt .input { min-height: 30px; padding: 3px 6px; font-size: 0.85rem; }
+
+@media (max-width: 960px) {
+  .consult-layout:has(.consult-aside-plain) { grid-template-columns: minmax(0, 1fr); }
+  .consult-aside-plain { grid-column: auto; grid-row: 1; position: static; }
+}
+@media (max-width: 720px) {
+  .var-list li.var-row { grid-template-columns: minmax(0, 1fr); }
+  .var-meta { justify-content: flex-start; }
+  table.gdmt thead { display: none; }
+  table.gdmt, table.gdmt tbody, table.gdmt tr, table.gdmt td { display: block; width: 100%; }
+  table.gdmt tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  table.gdmt td { border: 0; padding: 3px 16px; }
+  table.gdmt td::before { content: attr(data-label) ": "; color: var(--muted); font-size: 0.8rem; }
+  table.gdmt td:first-child::before { content: none; }
+}

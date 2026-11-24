@@ -35,3 +35,13 @@ test("consultation fits a phone and keeps the record one tap away", async ({ pag
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("registry visit form fits a phone", async ({ page }) => {
+  await signInAs(page, "Dr A");
+  await expect(page.getByRole("heading", { name: "Patients" })).toBeVisible();
+  await page.goto("/patients/10000000-0000-0000-0000-000000000003/registries/1b000000-0000-0000-0000-000000000034/assessments/1c000000-0000-0000-0000-000000000034");
+  await expect(page.getByRole("button", { name: "Fill from chart" })).toBeVisible();
+  await expect(page.locator(".var-row").first()).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

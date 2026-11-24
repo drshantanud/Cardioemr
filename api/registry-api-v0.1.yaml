@@ -140,6 +140,47 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/Patient'}}}
         default: {$ref: '#/components/responses/Problem'}
 
+  /patients/{patientId}/consents:
+    parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
+    post:
+      tags: [Patients]
+      operationId: recordConsent
+      summary: Record a consent (or a refusal) at this centre
+      description: Research registry consent names its protocol and is recorded by a clinician, coordinator or PI.
+        409 when an active consent of the same kind (and protocol) already exists.
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/NewConsent'}}}
+      responses:
+        '201':
+          description: Recorded
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
+  /consents/{consentId}/withdraw:
+    parameters:
+      - {name: consentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/CentreId'}
+      - {$ref: '#/components/parameters/ActingRole'}
+    post:
+      tags: [Patients]
+      operationId: withdrawConsent
+      summary: Record withdrawal; withdrawing research consent ends the enrolment that relies on it
+      x-roles: [assistant, nurse, clinician, research_coordinator, principal_investigator]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/ChangeReasonRequired'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ConsentWithdrawal'}}}
+      responses:
+        '200':
+          description: Withdrawn
+          headers: {ETag: {$ref: '#/components/headers/ETag'}}
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Problem'}
+
   /patients/{patientId}/encounters:
     parameters: [{$ref: '#/components/parameters/PatientId'}, {$ref: '#/components/parameters/CentreId'}, {$ref: '#/components/parameters/ActingRole'}]
     get:
@@ -1057,6 +1098,16 @@ paths:
                         rule_set_code: {type: string}
                         version: {type: integer}
                         status: {type: string}
+                        categories:
+                          type: array
+                          description: Risk categories this guideline defines, with their LDL-C targets
+                          items:
+                            type: object
+                            properties:
+                              risk_category: {type: string}
+                              ldl_target_mg_dl: {type: number}
+                              target_operator: {type: string}
+                              min_pct_reduction: {type: [number, 'null']}
                         is_primary: {type: boolean}
         default: {$ref: '#/components/responses/Problem'}
     put:
@@ -1066,6 +1117,12 @@ paths:
       description: |
         LDL-C is the ldl_c value on the form, else the nearest chart result (-30..+7 d); % reduction is from
         the lipid enrolment baseline. Changing a saved category needs X-Change-Reason (428).
+
+        The saved categories are also written into this visit's form questions, where the protocol asks them:
+        risk_category and ldl_target (ESC_EAS_2019), lai_risk_category and ldl_target_lai (LAI_2020). A
+        category is stored as entered; a target as calculated, pointing at registry.lipid_target_attainment
+        (source_row_id is the rule set). Replacing an answer already typed on the form needs X-Change-Reason
+        (428, detail names the question); a replaced value goes back to unverified.
       x-roles: [clinician, research_coordinator, principal_investigator]
       requestBody:
         required: true
@@ -1091,8 +1148,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [items, form_values]
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/LipidTargetAttainment'}}
+                  form_values:
+                    type: array
+                    description: Form questions this call wrote or changed (empty when they already matched)
+                    items: {type: string, examples: [risk_category, ldl_target]}
         default: {$ref: '#/components/responses/Problem'}
 
   /patients/{patientId}/pci-procedures:
@@ -1590,6 +1652,61 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
 
   schemas:
+    NewConsent:
+      additionalProperties: false
+      properties:
+        consent_type:
+          enum: [clinical_care, research_registry, cross_centre_linkage, external_data_sharing, ai_processing, recontact]
+          type: string
+        protocol_id:
+          default: null
+          description: Required for research_registry, and only then
+          format: uuid
+          type: [string, 'null']
+        consent_form_version: {maxLength: 50, minLength: 1, type: string}
+        consent_language:
+          default: null
+          maxLength: 40
+          type: [string, 'null']
+        consent_date: {format: date, type: string}
+        consent_method:
+          enum: [written, electronic, audio_video, verbal_witnessed, waiver_approved]
+          type: string
+        signed_by:
+          default: patient
+          enum: [patient, legally_authorised_rep]
+          type: string
+        lar_name:
+          default: null
+          maxLength: 200
+          type: [string, 'null']
+        lar_relation:
+          default: null
+          maxLength: 100
+          type: [string, 'null']
+        witness_name:
+          default: null
+          maxLength: 200
+          type: [string, 'null']
+        consent_status:
+          default: active
+          enum: [active, refused]
+          type: string
+      required: [consent_type, consent_form_version, consent_date, consent_method]
+      type: object
+    ConsentWithdrawal:
+      additionalProperties: false
+      properties:
+        withdrawal_date: {format: date, type: string}
+        withdrawal_scope:
+          enum: [no_further_contact, no_further_collection, exclude_collected_data]
+          type: string
+        withdrawal_reason:
+          default: null
+          maxLength: 500
+          type: [string, 'null']
+      required: [withdrawal_date, withdrawal_scope]
+      type: object
     AllergyUpdate:
       additionalProperties: false
       properties:
@@ -2258,6 +2375,10 @@ components:
         title: {type: string}
         status: {type: string}
         requires_research_consent: {type: boolean}
+        inclusion_text: {type: string, description: 'Clauses separated by semicolons; the app shows one checklist line each'}
+        exclusion_text: {type: [string, 'null']}
+        inclusion_rules: {type: array, items: {type: object}, description: Machine-readable criteria when the protocol has them}
+        exclusion_rules: {type: array, items: {type: object}}
         visits:
           type: array
           items:

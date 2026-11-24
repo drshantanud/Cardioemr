@@ -4,10 +4,12 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AllergyForm } from "@/components/AllergyForm";
 import { DiagnosisForm, ROLE_LABELS } from "@/components/DiagnosisForm";
+import { ConsentForm, WithdrawConsent } from "@/components/ConsentForm";
 import { MedicationPanel } from "@/components/MedicationPanel";
+import { RegistryPanel } from "@/components/RegistryPanel";
 import { VitalsForm, vitalsLine } from "@/components/VitalsForm";
 import { ApiError, newIdempotencyKey } from "@/lib/api";
-import type { ClinicalSummary, Encounter } from "@/lib/types";
+import type { ClinicalSummary, Consent, Encounter, Registry } from "@/lib/types";
 import { Card, ErrorBanner, Loading, StatusBadge } from "@/components/ui";
 import {
   ageSex, formatDate, formatDateTime, formatDob, formatMobile, humanise, REFERRAL_SOURCES, SEX_LABEL, stateName,
@@ -33,7 +35,9 @@ function Overview() {
   const { data, error, reload } = usePatient(id);
   const role = selection?.role;
   const [summary, setSummary] = useState<ClinicalSummary | null>(null);
-  const [panel, setPanel] = useState<"vitals" | "diagnosis" | "allergy" | null>(null);
+  const [panel, setPanel] = useState<"vitals" | "diagnosis" | "allergy" | "consent" | null>(null);
+  const [withdrawing, setWithdrawing] = useState<Consent | null>(null);
+  const [registries, setRegistries] = useState<Registry[]>([]);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const startKey = useRef<string | null>(null);
@@ -46,6 +50,10 @@ function Overview() {
     }
   }, [api, id]);
   useEffect(() => { void loadSummary(); }, [loadSummary]);
+  useEffect(() => {
+    if (!can(role, "registry.screen")) return;
+    api<{ items: Registry[] }>("/registries").then((r) => setRegistries(r.data.items)).catch(() => setRegistries([]));
+  }, [api, role]);
 
   const start = async (encounterType: string) => {
     setStarting(true);
@@ -76,7 +84,7 @@ function Overview() {
     );
   }
   if (!data) return <Loading />;
-  const { patient: p, consents, allergies, recent_encounters: encounters, enrolments, registry_suggestions: suggestions } = data;
+  const { patient: p, consents, allergies, recent_encounters: encounters, enrolments } = data;
   const tz = membership?.timezone;
   const referral = REFERRAL_SOURCES.find(([c]) => c === p.referral_source)?.[1];
   const openDraft = encounters.find((e) => e.status === "draft");
@@ -161,20 +169,44 @@ function Overview() {
               <dt>Registered</dt><dd>{formatDate(p.registration_date)}</dd>
             </dl>
           </Card>
-          <Card title="Consent" flush>
+          <Card title="Consent" flush actions={can(role, "consent.record") && panel !== "consent" ? (
+            <button type="button" className="btn btn-sm" onClick={() => setPanel("consent")}>Record consent</button>
+          ) : undefined}>
+            {panel === "consent" && (
+              <div className="card-body">
+                <ConsentForm patientId={p.patient_id} canResearch={can(role, "consent.research")}
+                  protocols={registries.flatMap((r) => r.protocols.map((x) => ({ ...x, registry_code: r.registry_code })))}
+                  onCancel={() => setPanel(null)} onSaved={() => { setPanel(null); void reload(); }} />
+              </div>
+            )}
             {consents.length === 0 ? (
               <div className="empty">No consent recorded yet.</div>
             ) : (
               <ul className="plain">
                 {consents.map((c) => (
-                  <li key={c.consent_id}>
+                  <li key={c.consent_id} style={{ flexWrap: "wrap" }}>
                     <span>
                       {CONSENT_LABELS[c.consent_type] ?? humanise(c.consent_type)}
                       {c.protocol_code && <span className="muted"> · {c.protocol_code}</span>}
                       <br />
-                      <span className="small muted">{formatDate(c.consent_date)} · form {c.consent_form_version}</span>
+                      <span className="small muted">
+                        {formatDate(c.consent_date)} · form {c.consent_form_version}
+                        {c.withdrawal_date ? ` · withdrawn ${formatDate(c.withdrawal_date)}` : ""}
+                      </span>
                     </span>
-                    <StatusBadge status={c.consent_status} />
+                    <span className="row" style={{ gap: 6 }}>
+                      <StatusBadge status={c.consent_status} />
+                      {c.consent_status === "active" && can(role, c.consent_type === "research_registry" ? "consent.research" : "consent.record")
+                        && withdrawing?.consent_id !== c.consent_id && (
+                        <button type="button" className="link-button small" onClick={() => setWithdrawing(c)}>Withdraw</button>
+                      )}
+                    </span>
+                    {withdrawing?.consent_id === c.consent_id && (
+                      <div style={{ flexBasis: "100%" }}>
+                        <WithdrawConsent consent={c} onCancel={() => setWithdrawing(null)}
+                          onDone={() => { setWithdrawing(null); void reload(); }} />
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -251,34 +283,7 @@ function Overview() {
           </Card>
           {enrolments !== null && (
             <Card title="Registries" flush>
-              {enrolments.length === 0 && (suggestions?.length ?? 0) === 0 ? (
-                <div className="empty">Not in any registry.</div>
-              ) : (
-                <ul className="plain">
-                  {enrolments.map((e) => (
-                    <li key={e.enrolment_id}>
-                      <span>
-                        {e.registry_name} <span className="muted small">· {e.protocol_code}</span>
-                        <br />
-                        <span className="small muted">
-                          {e.enrolment_date ? `Enrolled ${formatDate(e.enrolment_date)}` : `Screening since ${formatDate(e.screening_date)}`}
-                        </span>
-                      </span>
-                      <StatusBadge status={e.enrolment_status} />
-                    </li>
-                  ))}
-                  {suggestions?.map((s) => (
-                    <li key={s.suggestion_id}>
-                      <span>
-                        {s.registry_code} registry
-                        <br />
-                        <span className="small muted">Suggested {formatDate(s.suggested_at)} from a diagnosis</span>
-                      </span>
-                      <span className="badge badge-info">eligible to screen</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <RegistryPanel patientId={p.patient_id} enrolments={enrolments} registries={registries} onChanged={refreshAll} />
             </Card>
           )}
         </div>

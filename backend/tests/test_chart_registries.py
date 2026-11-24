@@ -27,6 +27,12 @@ def values(prefill: dict) -> dict:
     return {v["variable_code"]: v for v in prefill["filled"]}
 
 
+def form_values(client, as_user, assessment_id) -> dict:
+    r = client.get(f"{API}/assessments/{assessment_id}", headers=as_user("dra"))
+    assert r.status_code == 200, r.json()
+    return {i["definition"]["variable_code"]: i["value"] for i in r.json()["variables"] if i["value"]}
+
+
 def enrol_and_open_baseline(client, as_user, idem, registry: str) -> dict:
     regs = {x["registry_code"]: x for x in client.get(f"{API}/registries", headers=as_user("dra")).json()["items"]}
     protocol = regs[registry]["protocols"][0]["protocol_id"]
@@ -150,6 +156,9 @@ def test_lipid_targets_under_both_guidelines(client, as_user):
     assert r.json()["items"] == []
     assert {g["rule_set_code"]: g["is_primary"] for g in r.json()["guidelines"]} == {"ESC_EAS_2019": True,
                                                                                     "LAI_2020": False}
+    esc_cats = {c["risk_category"]: c["ldl_target_mg_dl"] for c in r.json()["guidelines"][0]["categories"]
+                } if r.json()["guidelines"][0]["rule_set_code"] == "ESC_EAS_2019" else {}
+    assert esc_cats.get("very_high") == 55 and esc_cats.get("extreme") == 40
     body = {"categories": [{"rule_set_code": "ESC_EAS_2019", "risk_category": "very_high"},
                            {"rule_set_code": "LAI_2020", "risk_category": "extreme_a"}]}
     r = client.put(url, json=body, headers=as_user("dra"))
@@ -159,6 +168,16 @@ def test_lipid_targets_under_both_guidelines(client, as_user):
     assert esc["is_primary"] and esc["ldl_target_mg_dl"] == 55 and esc["ldl_mg_dl"] == 88
     assert esc["ldl_pct_reduction"] == 45 and esc["target_met"] is False
     assert lai["ldl_target_mg_dl"] == 50 and lai["target_met"] is False and lai["rule_set_status"] == "active"
+    # the panel fills the form's own risk-category and target questions
+    assert set(r.json()["form_values"]) == {"risk_category", "ldl_target", "lai_risk_category", "ldl_target_lai"}
+    form = form_values(client, as_user, state["lipid_assessment"])
+    assert form["risk_category"]["value"] == "very_high" and form["risk_category"]["source_kind"] == "entered"
+    assert form["ldl_target"]["value"] == 55 and form["ldl_target"]["source_kind"] == "calculated"
+    assert form["ldl_target"]["source_table"] == "registry.lipid_target_attainment"
+    assert form["lai_risk_category"]["value"] == "extreme_a" and form["ldl_target_lai"]["value"] == 50
+    assert form["ldl_guideline"]["value"] == "ESC_EAS_2019 v1"         # filled by prefill
+    r = client.put(url, json=body, headers=as_user("dra"))              # saving the same again changes nothing
+    assert r.status_code == 200 and r.json()["form_values"] == []
 
 
 def test_lipid_target_errors(client, as_user):
@@ -174,9 +193,28 @@ def test_lipid_target_errors(client, as_user):
     assert r.status_code == 422 and code(r) == "VALIDATION_FAILED"
     r = client.put(url, json={"categories": [{"rule_set_code": "LAI_2020", "risk_category": "very_high"}]},
                    headers=as_user("dra", x_change_reason="Recategorised after review"))
-    assert r.status_code == 200
+    assert r.status_code == 200, r.json()
     lai = next(x for x in r.json()["items"] if x["rule_set_code"] == "LAI_2020")
     assert lai["risk_category"] == "very_high" and lai["ldl_target_mg_dl"] == 50
+    form = form_values(client, as_user, state["lipid_assessment"])
+    assert form["lai_risk_category"]["value"] == "very_high" and form["ldl_target_lai"]["value"] == 50
+
+
+def test_lipid_panel_respects_an_answer_typed_on_the_form(client, as_user):
+    aid = state["lipid_assessment"]
+    url = f"{API}/assessments/{aid}/lipid/targets"
+    r = client.put(f"{API}/assessments/{aid}/values", headers=as_user("dra", x_change_reason="Typed on the form"),
+                   json={"values": [{"variable_code": "risk_category", "value": "high",
+                                     "row_version": form_values(client, as_user, aid)["risk_category"]["row_version"]}]})
+    assert r.status_code == 200, r.json()
+    body = {"categories": [{"rule_set_code": "ESC_EAS_2019", "risk_category": "very_high"}]}
+    r = client.put(url, json=body, headers=as_user("dra"))
+    assert r.status_code == 428 and r.json()["detail"] == "risk_category"
+    assert form_values(client, as_user, aid)["risk_category"]["value"] == "high"     # nothing half-written
+    r = client.put(url, json=body, headers=as_user("dra", x_change_reason="Panel category is the reviewed one"))
+    assert r.status_code == 200 and r.json()["form_values"] == ["risk_category"]
+    v = form_values(client, as_user, aid)["risk_category"]
+    assert v["value"] == "very_high" and v["verification_status"] == "unverified"
 
 
 def test_cad_baseline_antiplatelets(client, as_user, idem):

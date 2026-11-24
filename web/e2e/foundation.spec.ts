@@ -77,7 +77,8 @@ test("cardiologist sees registries; Mumbai sees nothing of Pune", async ({ page,
   await page.getByPlaceholder("Name, patient ID or mobile").fill("Ramesh");
   await page.getByRole("row", { name: /Ramesh Kulkarni/ }).click();
   await expect(page.getByRole("heading", { name: "Registries" })).toBeVisible();
-  await expect(page.getByText("HF registry")).toBeVisible();
+  await expect(page.getByText("Heart failure registry")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start screening" })).toBeVisible();
   const puneUrl = page.url();
 
   await page.getByRole("button", { name: "Sign out" }).click();
