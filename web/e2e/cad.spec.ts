@@ -50,11 +50,12 @@ test("cardiologist records a PCI with two stents and reports an MI", async ({ pa
   await page.locator("#l1-vessel").selectOption("LAD");
   await page.locator("#l1-seg").fill("6");
   await page.locator("#l1-pre").fill("90");
-  await page.locator("#l1-s1-dev").fill("Xience Sierra");
+  await page.locator("#l1-s1-dev").selectOption({ label: "XIENCE Skypoint (Abbott Vascular)" });
   await page.locator("#l1-s1-dia").fill("3.0");
   await page.locator("#l1-s1-len").fill("28");
   await page.getByRole("button", { name: "Add stent" }).click();
-  await page.locator("#l1-s2-dev").fill("Xience Sierra");
+  await page.locator("#l1-s2-dev").selectOption({ label: "Other, not in the list…" });
+  await page.locator("#l1-s2-devtxt").fill("Xience Sierra");
   await page.locator("#l1-s2-dia").fill("2.75");
   await page.locator("#l1-s2-len").fill("18");
   await page.locator("#l1-finaltimi").selectOption("3");
@@ -62,6 +63,7 @@ test("cardiologist records a PCI with two stents and reports an MI", async ({ pa
   await page.getByRole("button", { name: "Save procedure" }).click();
   await expect(page.getByText("Lesion 1").first()).toBeVisible();
   await expect(page.getByText("LAD (6) · 90% → 0% · 2 stents")).toBeVisible();
+  await expect(page.getByText(/Stent 1: XIENCE Skypoint \(Abbott Vascular\) 3 × 28 mm/)).toBeVisible();
   await expect(page.getByText(/Stent 2: Xience Sierra 2.75 × 18 mm/)).toBeVisible();
 
   // Editing a final procedure asks for a reason.

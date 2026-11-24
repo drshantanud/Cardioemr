@@ -537,6 +537,26 @@ export interface PciStent {
   length_mm: number;
   deployment_atm: number | null;
   post_dilatation_balloon_mm: number | null;
+  /** Catalogue name, e.g. "Orsiro (Biotronik)"; null for a typed device_text. Read only. */
+  device_name?: string | null;
+  device_type?: string | null;
+}
+
+export interface StentDevice {
+  stent_device_id: string;
+  manufacturer: string;
+  platform_name: string;
+  display_name: string;
+  device_type: string;
+  drug: string | null;
+  strut_material: string | null;
+  polymer_type: "durable" | "biodegradable" | "polymer_free" | null;
+  polymer: string | null;
+  strut_thickness_min_um: number | null;
+  strut_thickness_max_um: number | null;
+  aliases: string[];
+  review_status: "pending_clinical_review" | "verified";
+  status: "active" | "retired";
 }
 
 export interface PciLesion {

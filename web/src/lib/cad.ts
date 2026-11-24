@@ -1,7 +1,7 @@
 // PCI procedures, clinical events and adjudication: option lists, form drafts and the
 // conversion between a draft (what the form holds, all strings) and the API body.
 // The API and the database check everything again; this only gives early, plain messages.
-import type { Classification, ClinicalEvent, PciLesion, PciProcedure, PciStent } from "./types";
+import type { Classification, ClinicalEvent, PciLesion, PciProcedure, PciStent, StentDevice } from "./types";
 
 type Opt = [string, string][];
 const opts = (pairs: Record<string, string>): Opt => Object.entries(pairs);
@@ -81,6 +81,8 @@ export function label(list: Opt, code: string | null | undefined): string {
 
 export interface StentDraft {
   stent_id?: string; sequence_number: number; device_text: string; stent_device_id: string | null;
+  /** True when the stent is not in the catalogue and its make and model are typed. */
+  device_other: boolean;
   diameter_mm: string; length_mm: string; deployment_atm: string; post_dilatation_balloon_mm: string;
 }
 export interface LesionDraft {
@@ -103,7 +105,7 @@ const str = (v: number | string | null | undefined) => (v == null ? "" : String(
 const yn = (v: boolean | null | undefined): "" | "yes" | "no" => (v == null ? "" : v ? "yes" : "no");
 
 export function newStent(n: number): StentDraft {
-  return { sequence_number: n, device_text: "", stent_device_id: null, diameter_mm: "", length_mm: "", deployment_atm: "", post_dilatation_balloon_mm: "" };
+  return { sequence_number: n, device_text: "", stent_device_id: null, device_other: false, diameter_mm: "", length_mm: "", deployment_atm: "", post_dilatation_balloon_mm: "" };
 }
 export function newLesion(n: number): LesionDraft {
   return {
@@ -141,6 +143,7 @@ export function pciDraftOf(p: PciProcedure): PciDraft {
       residual_stenosis_pct: str(l.residual_stenosis_pct), treatment: l.treatment,
       stents: l.stents.map((s) => ({
         stent_id: s.stent_id, sequence_number: s.sequence_number, device_text: str(s.device_text), stent_device_id: s.stent_device_id,
+        device_other: !s.stent_device_id,
         diameter_mm: str(s.diameter_mm), length_mm: str(s.length_mm), deployment_atm: str(s.deployment_atm),
         post_dilatation_balloon_mm: str(s.post_dilatation_balloon_mm),
       })),
@@ -195,7 +198,9 @@ export function validatePci(d: PciDraft, today: string): PciErrors {
     if (l.treatment === "stent") {
       for (const s of l.stents) {
         const sk = `${k}.stent.${s.sequence_number}`;
-        if (!s.device_text.trim() && !s.stent_device_id) e[`${sk}.device_text`] = "Name the stent";
+        if (s.device_other ? !s.device_text.trim() : !s.stent_device_id) {
+          e[`${sk}.device_text`] = s.device_other ? "Type the make and model" : "Choose the stent";
+        }
         range(e, `${sk}.diameter_mm`, s.diameter_mm, 1.5, 6, "diameter", true);
         range(e, `${sk}.length_mm`, s.length_mm, 6, 60, "length", true);
         range(e, `${sk}.deployment_atm`, s.deployment_atm, 4, 30, "deployment pressure");
@@ -224,7 +229,8 @@ export function pciBody(d: PciDraft): Record<string, unknown> {
       pre_physiology_value: num(l.pre_physiology_value), post_physiology_value: num(l.post_physiology_value),
       final_timi_flow: int(l.final_timi_flow), residual_stenosis_pct: int(l.residual_stenosis_pct), treatment: l.treatment,
       stents: l.treatment !== "stent" ? [] : l.stents.map((s): Omit<PciStent, "stent_id"> => ({
-        sequence_number: s.sequence_number, stent_device_id: s.stent_device_id, device_text: opt(s.device_text),
+        sequence_number: s.sequence_number, stent_device_id: s.device_other ? null : s.stent_device_id,
+        device_text: s.device_other ? opt(s.device_text) : null,
         diameter_mm: num(s.diameter_mm) as number, length_mm: num(s.length_mm) as number,
         deployment_atm: int(s.deployment_atm), post_dilatation_balloon_mm: num(s.post_dilatation_balloon_mm),
       })),
@@ -243,8 +249,21 @@ export function lesionLine(l: PciLesion): string {
   return parts.join(" · ");
 }
 
+/** Picker label, e.g. "Orsiro (Biotronik)"; short enough for a phone. */
+export function stentOptionLabel(d: StentDevice): string {
+  return `${d.display_name}${d.status === "retired" ? " (retired)" : ""}`;
+}
+
+/** What sets the chosen stent apart, shown under the picker, e.g. "sirolimus · biodegradable polymer · 60–80 µm struts". */
+export function stentDetail(d: StentDevice): string {
+  const polymer = d.polymer_type === "polymer_free" ? "polymer-free" : d.polymer_type ? `${d.polymer_type} polymer` : null;
+  const lo = d.strut_thickness_min_um, hi = d.strut_thickness_max_um;
+  const strut = lo == null ? null : `${lo === hi || hi == null ? lo : `${lo}–${hi}`} µm struts`;
+  return [d.drug, polymer, strut].filter(Boolean).join(" · ");
+}
+
 export function stentLine(s: PciStent): string {
-  return `${s.device_text ?? "Catalogue stent"} ${s.diameter_mm} × ${s.length_mm} mm${s.deployment_atm ? ` at ${s.deployment_atm} atm` : ""}`;
+  return `${s.device_name ?? s.device_text ?? "Catalogue stent"} ${s.diameter_mm} × ${s.length_mm} mm${s.deployment_atm ? ` at ${s.deployment_atm} atm` : ""}`;
 }
 
 // --- Event drafts ------------------------------------------------------------------

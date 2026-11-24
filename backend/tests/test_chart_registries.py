@@ -1,5 +1,6 @@
 """Prefill from the chart, HF GDMT, lipid targets and PCI entry, for the charted
 patient 2 in fixtures.sql (female, born 1958-07-02, HFrEF on three pillars)."""
+import uuid
 import pytest
 
 from conftest import CENTRE_B
@@ -281,3 +282,40 @@ def test_pci_replace(client, as_user):
     assert p["row_version"] > int(state["pci_etag"].strip('"'))
     assert p["lesions"][0]["stents"][1]["diameter_mm"] == 3.25 and p["lesions"][2]["vessel"] == "LCX"
     assert len({s["stent_id"] for s in p["lesions"][0]["stents"]}) == 2
+
+
+def test_stent_catalogue(client, as_user, idem, db_admin):
+    r = client.get(f"{API}/stent-devices", headers=as_user("nua"))
+    assert r.status_code == 200
+    items = r.json()["items"]
+    names = [d["platform_name"] for d in items]
+    assert names[:3] == ["XIENCE Skypoint", "Onyx Frontier", "Ultimaster Nagomi"] and len(items) >= 9
+    orsiro = next(d for d in items if d["platform_name"] == "Orsiro")
+    assert orsiro["manufacturer"] == "Biotronik" and orsiro["drug"] == "sirolimus"
+    assert orsiro["display_name"] == "Orsiro (Biotronik)" and orsiro["review_status"] == "pending_clinical_review"
+
+    lesion = {**PCI["lesions"][0], "stents": [
+        {"sequence_number": 1, "stent_device_id": orsiro["stent_device_id"], "diameter_mm": 3.0, "length_mm": 30},
+        {"sequence_number": 2, "device_text": "Yukon Choice PC", "diameter_mm": 3.5, "length_mm": 12}]}
+    body = {**PCI, "lesions": [lesion]}
+    url = f"{API}/patients/{PATIENT2}/pci-procedures"
+    r = client.post(url, json=body, headers={**as_user("dra"), **idem()})
+    assert r.status_code == 201, r.json()
+    stents = r.json()["lesions"][0]["stents"]
+    assert stents[0]["device_name"] == "Orsiro (Biotronik)" and stents[0]["device_type"] == "DES"
+    assert stents[1]["device_name"] is None and stents[1]["device_text"] == "Yukon Choice PC"
+
+    unknown = {**body, "lesions": [{**lesion, "stents": [{**lesion["stents"][0], "stent_device_id": str(uuid.uuid4())}]}]}
+    r = client.post(url, json=unknown, headers={**as_user("dra"), **idem()})
+    assert r.status_code == 422 and r.json()["code"] == "STENT_UNKNOWN"
+
+    db_admin.execute("UPDATE ref.stent_devices SET status = 'retired' WHERE platform_name = 'Orsiro'")
+    try:
+        assert "Orsiro" not in [d["platform_name"] for d in
+                                client.get(f"{API}/stent-devices", headers=as_user("dra")).json()["items"]]
+        assert "Orsiro" in [d["platform_name"] for d in client.get(
+            f"{API}/stent-devices?include_retired=true", headers=as_user("dra")).json()["items"]]
+        r = client.post(url, json=body, headers={**as_user("dra"), **idem()})
+        assert r.status_code == 422 and r.json()["code"] == "STENT_RETIRED"
+    finally:
+        db_admin.execute("UPDATE ref.stent_devices SET status = 'active' WHERE platform_name = 'Orsiro'")

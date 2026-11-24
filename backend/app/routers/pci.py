@@ -168,13 +168,28 @@ def procedure_out(ctx: Ctx, procedure_id) -> dict | None:
         return None
     lesions = ctx.all("SELECT * FROM clinical.pci_lesions WHERE procedure_id = %s ORDER BY lesion_number",
                       (procedure_id,))
-    stents = ctx.all("""SELECT s.* FROM clinical.pci_stents s JOIN clinical.pci_lesions l USING (lesion_id)
+    stents = ctx.all("""SELECT s.*, d.display_name AS device_name, d.device_type
+                          FROM clinical.pci_stents s JOIN clinical.pci_lesions l USING (lesion_id)
+                          LEFT JOIN ref.v_stent_catalogue d USING (stent_device_id)
                          WHERE l.procedure_id = %s ORDER BY s.sequence_number""", (procedure_id,))
     out = {k: p[k] for k in ("procedure_id", "patient_id", *PROC_FIELDS, "row_version")}
     out["lesions"] = [{"lesion_id": l["lesion_id"], **{k: l[k] for k in LESION_FIELDS},
-                       "stents": [{"stent_id": s["stent_id"], **{k: s[k] for k in STENT_FIELDS}}
+                       "stents": [{"stent_id": s["stent_id"], **{k: s[k] for k in STENT_FIELDS},
+                                   "device_name": s["device_name"], "device_type": s["device_type"]}
                                   for s in stents if s["lesion_id"] == l["lesion_id"]]} for l in lesions]
     return _jsonable(out)
+
+
+@router.get("/stent-devices")
+def list_stent_devices(include_retired: bool = False, ctx: Ctx = Depends(READERS)):
+    """The stent catalogue for the PCI form, in picker order.  A stent not in it is recorded by
+    device_text.  Retired devices are listed only on request (to show on older records)."""
+    rows = ctx.all("""SELECT stent_device_id, manufacturer, platform_name, display_name, device_type, drug,
+                             strut_material, polymer_type, polymer, strut_thickness_min_um, strut_thickness_max_um,
+                             aliases, review_status, status
+                        FROM ref.v_stent_catalogue WHERE %s OR status = 'active'
+                       ORDER BY sort_order, platform_name""", (include_retired,))
+    return {"items": _jsonable(rows)}
 
 
 @router.post("/patients/{patient_id}/pci-procedures", status_code=201)

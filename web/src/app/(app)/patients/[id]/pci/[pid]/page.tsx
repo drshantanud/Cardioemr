@@ -11,7 +11,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { useSession } from "@/lib/session";
-import type { PciProcedure } from "@/lib/types";
+import type { PciProcedure, StentDevice } from "@/lib/types";
 import { usePatient } from "@/lib/usePatient";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -70,6 +70,11 @@ export default function PciPage() {
   const [busy, setBusy] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const key = useRef<string | null>(null);
+  const [catalogue, setCatalogue] = useState<StentDevice[]>([]);
+
+  useEffect(() => {
+    api<{ items: StentDevice[] }>("/stent-devices?include_retired=true").then((r) => setCatalogue(r.data.items)).catch(() => undefined);
+  }, [api]);
 
   useEffect(() => {
     if (isNew) return;
@@ -164,7 +169,7 @@ export default function PciPage() {
 
       {editing && draft ? (
         <>
-          <PciForm draft={draft} set={setDraft} errors={errors} today={today()} />
+          <PciForm draft={draft} set={setDraft} errors={errors} today={today()} catalogue={catalogue} />
           <div className="form-actions">
             {needsReason && (
               <Field label="Reason for the change" htmlFor="pci-reason" required className="span-6">
