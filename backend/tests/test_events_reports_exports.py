@@ -56,6 +56,9 @@ def test_missing_data_report(client, as_user):
     rows = {i["variable_code"]: i for i in body["items"]}
     assert "presentation" in rows and CAD_BASELINE3 in rows["presentation"]["assessment_ids"]
     assert body["totals"]["missing"] >= len(rows) > 10
+    visit = next(a for a in body["by_assessment"] if a["assessment_id"] == CAD_BASELINE3)
+    assert visit["local_patient_code"] == "PUN1-000003" and visit["visit_code"] == "BL"
+    assert 0 < visit["missing"] <= visit["mandatory_values"] and visit["patient_id"] == PATIENT3
     assert client.get(f"{API}/protocols/{S['cad']}/missing-data", headers=as_user("nua")).status_code == 403
 
 

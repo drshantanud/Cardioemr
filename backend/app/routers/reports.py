@@ -80,8 +80,21 @@ def missing_data(protocol_id: uuid.UUID, visit_code: str | None = Query(None, pa
                count(*) FILTER (WHERE NOT has_value) AS missing
           FROM registry.v_mandatory_values WHERE protocol_id = %s AND (%s::text IS NULL OR visit_code = %s)""",
         (protocol_id, visit_code, visit_code))
+    # The visits to chase: each assessment with mandatory values still empty, most missing first.
+    by_assessment = ctx.all("""
+        SELECT m.assessment_id, m.enrolment_id, a.patient_id, pr.local_patient_code, m.visit_code, m.assessment_date,
+               m.completion_status, count(*) FILTER (WHERE NOT m.has_value) AS missing, count(*) AS mandatory_values
+          FROM registry.v_mandatory_values m
+          JOIN registry.assessments a USING (assessment_id)
+          LEFT JOIN clinical.patient_registrations pr ON pr.patient_id = a.patient_id AND pr.centre_id = a.centre_id
+         WHERE m.protocol_id = %s AND (%s::text IS NULL OR m.visit_code = %s)
+         GROUP BY m.assessment_id, m.enrolment_id, a.patient_id, pr.local_patient_code, m.visit_code,
+                  m.assessment_date, m.completion_status
+        HAVING count(*) FILTER (WHERE NOT m.has_value) > 0
+         ORDER BY count(*) FILTER (WHERE NOT m.has_value) DESC, m.assessment_date, m.assessment_id
+         LIMIT 200""", (protocol_id, visit_code, visit_code))
     for r in rows:
         r.pop("sort_order")
     totals["completeness_pct"] = (round(100 * (1 - totals["missing"] / totals["mandatory_values"]), 1)
                                   if totals["mandatory_values"] else None)
-    return _jsonable({"totals": totals, "items": rows})
+    return _jsonable({"totals": totals, "items": rows, "by_assessment": by_assessment})

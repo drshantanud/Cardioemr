@@ -31,7 +31,8 @@ export type Capability =
   | "consult.start" | "consult.edit" | "consult.sign" | "meds.prescribe" | "vitals.record" | "diagnosis.write"
   | "allergy.write" | "consent.record" | "consent.research" | "registry.screen" | "registry.enrol"
   | "registry.assess" | "registry.lock" | "registry.unlock" | "suggestion.read"
-  | "pci.read" | "pci.write" | "event.read" | "event.report" | "event.correct" | "adjudication.read" | "adjudication.decide";
+  | "pci.read" | "pci.write" | "event.read" | "event.report" | "event.correct" | "adjudication.read" | "adjudication.decide"
+  | "report.follow_up" | "report.missing_data" | "export.request" | "export.decide";
 
 const CAPABILITIES: Record<Capability, Role[]> = {
   "patients.read": FRONT_DESK,
@@ -61,6 +62,11 @@ const CAPABILITIES: Record<Capability, Role[]> = {
   "adjudication.read": REGISTRY,
   // the database also refuses the person who reported the event
   "adjudication.decide": ["clinician", "principal_investigator"],
+  "report.follow_up": [...REGISTRY, "nurse"],
+  "report.missing_data": REGISTRY,
+  // exports also need an active study membership with export rights (checked by the API)
+  "export.request": ["research_coordinator", "principal_investigator"],
+  "export.decide": ["principal_investigator"],
 };
 
 export function can(role: string | undefined, capability: Capability): boolean {
@@ -76,7 +82,10 @@ export interface NavItem {
 // Grows as each part of the app lands (consultations, registries, reports, exports).
 export const NAV: NavItem[] = [
   { href: "/patients", label: "Patients", capability: "patients.read" },
+  { href: "/follow-up", label: "Follow-up", capability: "report.follow_up" },
+  { href: "/data-quality", label: "Missing data", capability: "report.missing_data" },
   { href: "/adjudication", label: "Adjudication", capability: "adjudication.read" },
+  { href: "/exports", label: "Exports", capability: "export.request" },
 ];
 
 export function navFor(role: string | undefined): NavItem[] {

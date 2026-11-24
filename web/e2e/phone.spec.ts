@@ -61,3 +61,18 @@ test("PCI entry and the adjudication queue fit a phone", async ({ page }) => {
   await expect(page.getByLabel("Registry protocol")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
+
+test("reports and the export form fit a phone", async ({ page }) => {
+  await signInAs(page, "Coordinator A", "/follow-up");
+  await expect(page.getByRole("heading", { name: "Follow-up" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Overdue/ })).toBeVisible();
+  const noOverflow = async () => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await noOverflow();
+  await page.goto("/data-quality");
+  await expect(page.getByText("required values filled")).toBeVisible();
+  await noOverflow();
+  await page.goto("/exports");
+  await page.getByRole("button", { name: "Request export" }).click();
+  await expect(page.getByLabel("Search variables")).toBeVisible();
+  await noOverflow();
+});

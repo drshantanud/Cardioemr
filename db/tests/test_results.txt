@@ -199,4 +199,9 @@ PASS  a complaint can be removed from a draft
 PASS  complaints of a signed consultation cannot be removed [42501: encounter_complaints belongs to a signed encounter; record an amendment instead]
 PASS  assistants cannot remove complaints [42501: permission denied for table encounter_complaints]
 PASS  signed-encounter error is mapped
-Total: 179 passed, 0 failed (migrations 0001-0008, 2026-11-23)
+--- 21. Migration 0009: protocol names for the follow-up report
+PASS  a nurse lists the protocols active at the centre
+PASS  a nurse still cannot read protocols [42501: permission denied for table registry_protocols]
+PASS  a nurse cannot list another centre's protocols [42501: no active centre]
+PASS  assistants cannot list protocols [42501: permission denied for function centre_protocols]
+Total: 183 passed, 0 failed (migrations 0001-0009, 2026-11-24)
