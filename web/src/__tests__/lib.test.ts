@@ -38,6 +38,7 @@ describe("roles", () => {
     expect(can("centre_admin", "patients.read")).toBe(false);
     expect(homeFor("centre_admin")).toBe("/no-access");
     expect(navFor("assistant").map((n) => n.href)).toEqual(["/patients"]);
+    expect(navFor("principal_investigator").map((n) => n.href)).toContain("/adjudication");
   });
 });
 

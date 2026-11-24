@@ -30,7 +30,8 @@ export type Capability =
   | "patients.read" | "patients.register" | "patients.edit" | "registry.read"
   | "consult.start" | "consult.edit" | "consult.sign" | "meds.prescribe" | "vitals.record" | "diagnosis.write"
   | "allergy.write" | "consent.record" | "consent.research" | "registry.screen" | "registry.enrol"
-  | "registry.assess" | "registry.lock" | "registry.unlock" | "suggestion.read";
+  | "registry.assess" | "registry.lock" | "registry.unlock" | "suggestion.read"
+  | "pci.read" | "pci.write" | "event.read" | "event.report" | "event.correct" | "adjudication.read" | "adjudication.decide";
 
 const CAPABILITIES: Record<Capability, Role[]> = {
   "patients.read": FRONT_DESK,
@@ -52,6 +53,14 @@ const CAPABILITIES: Record<Capability, Role[]> = {
   "registry.assess": REGISTRY,
   "registry.lock": ["research_coordinator", "principal_investigator"],
   "registry.unlock": ["principal_investigator"],
+  "pci.read": [...REGISTRY, "nurse"],
+  "pci.write": ["clinician"],
+  "event.read": [...REGISTRY, "nurse"],
+  "event.report": ["clinician", "research_coordinator", "nurse"],
+  "event.correct": ["clinician", "research_coordinator"],
+  "adjudication.read": REGISTRY,
+  // the database also refuses the person who reported the event
+  "adjudication.decide": ["clinician", "principal_investigator"],
 };
 
 export function can(role: string | undefined, capability: Capability): boolean {
@@ -65,7 +74,10 @@ export interface NavItem {
 }
 
 // Grows as each part of the app lands (consultations, registries, reports, exports).
-export const NAV: NavItem[] = [{ href: "/patients", label: "Patients", capability: "patients.read" }];
+export const NAV: NavItem[] = [
+  { href: "/patients", label: "Patients", capability: "patients.read" },
+  { href: "/adjudication", label: "Adjudication", capability: "adjudication.read" },
+];
 
 export function navFor(role: string | undefined): NavItem[] {
   return NAV.filter((n) => can(role, n.capability));
